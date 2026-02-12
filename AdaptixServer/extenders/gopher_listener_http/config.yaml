@@ -1,0 +1,7 @@
+extender_type: "listener"
+extender_file: "listener_gopher_http.so"
+ax_file: "ax_config.axs"
+
+listener_name: "GopherHTTP"
+listener_type: "external"
+protocol: "http"

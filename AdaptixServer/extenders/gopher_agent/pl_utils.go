@@ -19,6 +19,11 @@ type Profile struct {
 	SslCert     []byte   `msgpack:"ssl_cert"`
 	SslKey      []byte   `msgpack:"ssl_key"`
 	CaCert      []byte   `msgpack:"ca_cert"`
+	Uri         string   `msgpack:"uri"`
+	UserAgent   string   `msgpack:"user_agent"`
+	Sleep       int      `msgpack:"sleep"`
+	Jitter      int      `msgpack:"jitter"`
+	HeaderName  string   `msgpack:"hb_header"`
 }
 
 type SessionInfo struct {
