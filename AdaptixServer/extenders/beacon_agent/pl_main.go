@@ -451,7 +451,7 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 		case "dns":
 			userAgent := generateConfig.UserAgent
 			if userAgent == "" {
-				userAgent = "Mozilla/5.0 (Windows NT 6.2; rv:20.0) Gecko/20121202 Firefox/20.0"
+				userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
 			}
 			params, err = buildDNSProfileParams(generateConfig, listenerMap, transportProfile.Watermark, agentWatermark, kill_date, working_time, userAgent)
 			if err != nil {

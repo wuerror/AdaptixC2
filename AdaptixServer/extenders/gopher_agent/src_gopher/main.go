@@ -145,7 +145,7 @@ func sendDataHttp(urlStr string, encryptedData []byte) ([]byte, error) {
 	if profile.UserAgent != "" {
 		req.Header.Set("User-Agent", profile.UserAgent)
 	} else {
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36")
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36")
 	}
 
 	if profile.HeaderName != "" && AgentId != 0 {
