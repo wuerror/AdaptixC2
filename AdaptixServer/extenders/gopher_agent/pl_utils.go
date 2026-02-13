@@ -185,6 +185,11 @@ type AnsScreenshots struct {
 	Screens [][]byte `msgpack:"screens"`
 }
 
+type ParamsSleep struct {
+	Sleep  int `msgpack:"sleep"`
+	Jitter int `msgpack:"jitter"`
+}
+
 type ParamsRun struct {
 	Program string   `msgpack:"program"`
 	Args    []string `msgpack:"args"`
@@ -278,6 +283,7 @@ const (
 	COMMAND_JOB_LIST   = 18
 	COMMAND_JOB_KILL   = 19
 	COMMAND_REV2SELF   = 20
+	COMMAND_SLEEP      = 21
 
 	COMMAND_TUNNEL_START  = 31
 	COMMAND_TUNNEL_STOP   = 32

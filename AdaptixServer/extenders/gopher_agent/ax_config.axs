@@ -167,6 +167,10 @@ function RegisterCommands(listenerType)
     let cmd_shell_unix = ax.create_command("shell", "Execute command via /bin/sh", "shell id", "Task: command execute");
     cmd_shell_unix.addArgString("cmd", true);
 
+    let cmd_sleep = ax.create_command("sleep", "Change sleep settings", "sleep 30m5s 10", "Task: change sleep");
+    cmd_sleep.addArgString("sleep", true, "Time in '%h%m%s' format or number of seconds");
+    cmd_sleep.addArgInt("jitter", false, "Max random amount of time in % added to sleep");
+
     let cmd_upload_win = ax.create_command("upload", "Upload a file", "upload /tmp/file.txt C:\\Temp\\file.txt", "Task: upload file");
     cmd_upload_win.addArgFile("local_file", true);
     cmd_upload_win.addArgString("remote_path", false);
@@ -181,8 +185,8 @@ function RegisterCommands(listenerType)
     cmd_zip_unix.addArgString("path", true);
     cmd_zip_unix.addArgString("zip_path", true);
 
-    let commands_win  = ax.create_commands_group("gopher", [cmd_cat_win,  cmd_cp, cmd_cd_win,  cmd_download_win,  cmd_execute, cmd_exit, cmd_job, cmd_kill, cmd_ls_win,  cmd_mv, cmd_mkdir_win,  cmd_ps, cmd_pwd, cmd_rev2self, cmd_rm_win,  cmd_run_win,  cmd_screenshot, cmd_socks, cmd_shell_win,  cmd_upload_win,  cmd_zip_win] );
-    let commands_unix = ax.create_commands_group("gopher", [cmd_cat_unix, cmd_cp, cmd_cd_unix, cmd_download_unix,              cmd_exit, cmd_job, cmd_kill, cmd_ls_unix, cmd_mv, cmd_mkdir_unix, cmd_ps, cmd_pwd,               cmd_rm_unix, cmd_run_unix, cmd_screenshot, cmd_socks, cmd_shell_unix, cmd_upload_unix, cmd_zip_unix] );
+    let commands_win  = ax.create_commands_group("gopher", [cmd_cat_win,  cmd_cp, cmd_cd_win,  cmd_download_win,  cmd_execute, cmd_exit, cmd_job, cmd_kill, cmd_ls_win,  cmd_mv, cmd_mkdir_win,  cmd_ps, cmd_pwd, cmd_rev2self, cmd_rm_win,  cmd_run_win,  cmd_screenshot, cmd_sleep, cmd_socks, cmd_shell_win,  cmd_upload_win,  cmd_zip_win] );
+    let commands_unix = ax.create_commands_group("gopher", [cmd_cat_unix, cmd_cp, cmd_cd_unix, cmd_download_unix,              cmd_exit, cmd_job, cmd_kill, cmd_ls_unix, cmd_mv, cmd_mkdir_unix, cmd_ps, cmd_pwd,               cmd_rm_unix, cmd_run_unix, cmd_screenshot, cmd_sleep, cmd_socks, cmd_shell_unix, cmd_upload_unix, cmd_zip_unix] );
 
     return {
         commands_windows: commands_win,

