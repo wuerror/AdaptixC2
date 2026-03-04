@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strconv"
 
 	adaptix "github.com/Adaptix-Framework/axc2"
 )
@@ -53,10 +52,7 @@ func (p *PluginListener) Create(name string, config string, customData []byte) (
 			return nil, listenerData, customdData, err
 		}
 
-		conf.Prepend, err = strconv.Unquote(`"` + conf.Prepend + `"`)
-		if err != nil {
-			return nil, listenerData, customdData, err
-		}
+		conf.Prepend = unescapeString(conf.Prepend)
 
 		conf.Protocol = "bind_tcp"
 	} else {
@@ -194,4 +190,50 @@ func (l *Listener) InternalHandler(data []byte) (string, error) {
 	/// END CODE HERE
 
 	return agentId, nil
+}
+
+/// UTILS
+
+func unescapeString(s string) string {
+	var result []byte
+	i := 0
+	for i < len(s) {
+		if s[i] == '\\' && i+1 < len(s) {
+			switch s[i+1] {
+			case 'n':
+				result = append(result, '\n')
+				i += 2
+			case 'r':
+				result = append(result, '\r')
+				i += 2
+			case 't':
+				result = append(result, '\t')
+				i += 2
+			case '\\':
+				result = append(result, '\\')
+				i += 2
+			case '0':
+				result = append(result, 0)
+				i += 2
+			case 'x':
+				if i+3 < len(s) {
+					hexStr := s[i+2 : i+4]
+					if b, err := hex.DecodeString(hexStr); err == nil {
+						result = append(result, b...)
+						i += 4
+						continue
+					}
+				}
+				result = append(result, s[i])
+				i++
+			default:
+				result = append(result, s[i])
+				i++
+			}
+		} else {
+			result = append(result, s[i])
+			i++
+		}
+	}
+	return string(result)
 }

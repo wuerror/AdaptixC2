@@ -42,10 +42,10 @@ type TransportHTTP struct {
 }
 
 type TransportConfig struct {
-	HostBind           string `json:"host_bind"`
-	PortBind           int    `json:"port_bind"`
-	Callback_addresses string `json:"callback_addresses"`
-	EncryptKey         string `json:"encrypt_key"`
+	HostBind           string   `json:"host_bind"`
+	PortBind           int      `json:"port_bind"`
+	Callback_addresses []string `json:"callback_addresses"`
+	EncryptKey         string   `json:"encrypt_key"`
 
 	Ssl         bool   `json:"ssl"`
 	SslCert     []byte `json:"ssl_cert"`
@@ -54,12 +54,12 @@ type TransportConfig struct {
 	SslKeyPath  string `json:"ssl_key_path"`
 
 	// Agent
-	HttpMethod     string `json:"http_method"`
-	Uri            string `json:"uri"`
-	ParameterName  string `json:"hb_header"`
-	UserAgent      string `json:"user_agent"`
-	HostHeader     string `json:"host_header"`
-	RequestHeaders string `json:"request_headers"`
+	HttpMethod     string   `json:"http_method"`
+	Uri            []string `json:"uri"`
+	ParameterName  string   `json:"hb_header"`
+	UserAgent      []string `json:"user_agent"`
+	HostHeader     []string `json:"host_header"`
+	RequestHeaders string   `json:"request_headers"`
 
 	// Server
 	ResponseHeaders    map[string]string `json:"response_headers"`
@@ -86,11 +86,10 @@ func validConfig(config string) error {
 		return errors.New("PortBind must be in the range 1-65535")
 	}
 
-	if conf.Callback_addresses == "" {
+	if len(conf.Callback_addresses) == 0 {
 		return errors.New("callback_servers is required")
 	}
-	lines := strings.Split(strings.TrimSpace(conf.Callback_addresses), "\n")
-	for _, line := range lines {
+	for _, line := range conf.Callback_addresses {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -120,9 +119,18 @@ func validConfig(config string) error {
 		}
 	}
 
-	matched, err := regexp.MatchString(`^/[a-zA-Z0-9\.\=\-]+(/[a-zA-Z0-9\.\=\-]+)*$`, conf.Uri)
-	if err != nil || !matched {
-		return errors.New("uri invalid")
+	if len(conf.Uri) == 0 {
+		return errors.New("uri is required")
+	}
+	for _, uriLine := range conf.Uri {
+		uriLine = strings.TrimSpace(uriLine)
+		if uriLine == "" {
+			continue
+		}
+		matched, err := regexp.MatchString(`^/[a-zA-Z0-9\.\=\-]+(/[a-zA-Z0-9\.\=\-]+)*$`, uriLine)
+		if err != nil || !matched {
+			return fmt.Errorf("uri invalid: %s", uriLine)
+		}
 	}
 
 	if conf.HttpMethod == "" {
@@ -133,7 +141,7 @@ func validConfig(config string) error {
 		return errors.New("hb_header is required")
 	}
 
-	if conf.UserAgent == "" {
+	if len(conf.UserAgent) == 0 {
 		return errors.New("user_agent is required")
 	}
 
@@ -293,27 +301,50 @@ func (t *TransportHTTP) processRequest(ctx *gin.Context) {
 		responseData []byte
 	)
 
-	valid := false
+	// Validate URI against configured URIs (newline-separated)
+	uriValid := false
 	u, err := url.Parse(ctx.Request.RequestURI)
 	if err == nil {
-		if t.Config.Uri == u.Path {
-			valid = true
+		for _, configUri := range t.Config.Uri {
+			configUri = strings.TrimSpace(configUri)
+			if configUri != "" && configUri == u.Path {
+				uriValid = true
+				break
+			}
 		}
 	}
-	if !valid {
+	if !uriValid {
 		t.pageError(ctx)
 		return
 	}
 
 	if len(t.Config.HostHeader) > 0 {
 		requestHost := ctx.Request.Host
-		if t.Config.HostHeader != requestHost {
+		hhValid := false
+		for _, configHH := range t.Config.HostHeader {
+			configHH = strings.TrimSpace(configHH)
+			if configHH != "" && configHH == requestHost {
+				hhValid = true
+				break
+			}
+		}
+		if !hhValid {
 			t.pageError(ctx)
 			return
 		}
 	}
 
-	if t.Config.UserAgent != ctx.Request.UserAgent() {
+	// Validate User-Agent against configured UAs (newline-separated)
+	requestUA := ctx.Request.UserAgent()
+	uaValid := false
+	for _, configUA := range t.Config.UserAgent {
+		configUA = strings.TrimSpace(configUA)
+		if configUA != "" && configUA == requestUA {
+			uaValid = true
+			break
+		}
+	}
+	if !uaValid {
 		t.pageError(ctx)
 		return
 	}

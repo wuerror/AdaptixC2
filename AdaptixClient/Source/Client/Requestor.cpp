@@ -13,6 +13,7 @@ QJsonObject HttpReq(const QString &sUrl, const QByteArray &jsonData, const QStri
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     request.setSslConfiguration(sslConfig);
+    request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
     if( !token.isEmpty() ) {
         QString bearerToken = "Bearer " + token;
         request.setRawHeader("Authorization", bearerToken.toUtf8());
@@ -81,9 +82,12 @@ bool HttpReqJwtUpdate(AuthProfile* profile)
 
 bool HttpReqGetOTP(const QString &type, const QString &objectId, AuthProfile profile, QString* message, bool* ok)
 {
+    QJsonObject innerData;
+    innerData["id"] = objectId;
+
     QJsonObject dataJson;
     dataJson["type"] = type;
-    dataJson["id"]   = objectId;
+    dataJson["data"] = innerData;
     QByteArray jsonData = QJsonDocument(dataJson).toJson();
 
     QString sUrl = profile.GetURL() + "/otp/generate";
@@ -94,6 +98,54 @@ bool HttpReqGetOTP(const QString &type, const QString &objectId, AuthProfile pro
         return true;
     }
     return false;
+}
+
+bool HttpReqGetOTP(const QString &type, const QJsonObject &data, const QString &baseUrl, const QString &accessToken, QString* otp)
+{
+    QJsonObject dataJson;
+    dataJson["type"] = type;
+    dataJson["data"] = data;
+    QByteArray jsonData = QJsonDocument(dataJson).toJson();
+
+    QString sUrl = baseUrl + "/otp/generate";
+    QJsonObject jsonObject = HttpReq(sUrl, jsonData, accessToken);
+    if ( jsonObject.contains("ok") && jsonObject["ok"].toBool() && jsonObject.contains("message") ) {
+        *otp = jsonObject["message"].toString();
+        return true;
+    }
+    return false;
+}
+
+bool HttpReqGetOTP(const QString &type, const QString &objectId, const QString &baseUrl, const QString &accessToken, QString* otp)
+{
+    QJsonObject innerData;
+    innerData["id"] = objectId;
+
+    QJsonObject dataJson;
+    dataJson["type"] = type;
+    dataJson["data"] = innerData;
+    QByteArray jsonData = QJsonDocument(dataJson).toJson();
+
+    QString sUrl = baseUrl + "/otp/generate";
+    QJsonObject jsonObject = HttpReq(sUrl, jsonData, accessToken);
+    if ( jsonObject.contains("ok") && jsonObject["ok"].toBool() && jsonObject.contains("message") ) {
+        *otp = jsonObject["message"].toString();
+        return true;
+    }
+    return false;
+}
+
+void HttpReqGetOTPAsync(const QString &type, const QString &objectId, AuthProfile& profile, const HttpCallback &callback)
+{
+    QJsonObject innerData;
+    innerData["id"] = objectId;
+
+    QJsonObject dataJson;
+    dataJson["type"] = type;
+    dataJson["data"] = innerData;
+    QByteArray jsonData = QJsonDocument(dataJson).toJson();
+
+    HttpRequestManager::instance().post(profile.GetURL(), "/otp/generate", profile.GetAccessToken(), jsonData, callback);
 }
 
 /// ASYNC VERSIONS
@@ -405,4 +457,35 @@ void HttpReqServiceCallAsync(const QString &service, const QString &command, con
     QByteArray jsonData = QJsonDocument(dataJson).toJson();
 
     HttpRequestManager::instance().post(profile.GetURL(), "/service/call", profile.GetAccessToken(), jsonData, callback);
+}
+
+void HttpReqAxScriptListAsync(AuthProfile& profile, const HttpCallback &callback)
+{
+    QByteArray jsonData = QJsonDocument(QJsonObject()).toJson();
+    HttpRequestManager::instance().post(profile.GetURL(), "/axscript/list", profile.GetAccessToken(), jsonData, callback);
+}
+
+void HttpReqAxScriptCommandsAsync(AuthProfile& profile, const HttpCallback &callback)
+{
+    QByteArray jsonData = QJsonDocument(QJsonObject()).toJson();
+    HttpRequestManager::instance().post(profile.GetURL(), "/axscript/commands", profile.GetAccessToken(), jsonData, callback);
+}
+
+void HttpReqAxScriptLoadAsync(const QString &name, const QString &script, AuthProfile& profile, const HttpCallback &callback)
+{
+    QJsonObject dataJson;
+    dataJson["name"] = name;
+    dataJson["script"] = script;
+    QByteArray jsonData = QJsonDocument(dataJson).toJson();
+
+    HttpRequestManager::instance().post(profile.GetURL(), "/axscript/load", profile.GetAccessToken(), jsonData, callback);
+}
+
+void HttpReqAxScriptUnloadAsync(const QString &name, AuthProfile& profile, const HttpCallback &callback)
+{
+    QJsonObject dataJson;
+    dataJson["name"] = name;
+    QByteArray jsonData = QJsonDocument(dataJson).toJson();
+
+    HttpRequestManager::instance().post(profile.GetURL(), "/axscript/unload", profile.GetAccessToken(), jsonData, callback);
 }

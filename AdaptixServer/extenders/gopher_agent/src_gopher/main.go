@@ -34,6 +34,8 @@ type TelemetryPacket struct {
 	Payload   string `json:"trace_id"`
 }
 
+var WakeupChan = make(chan struct{}, 1)
+
 func CreateInfo() ([]byte, []byte) {
 	var (
 		addr     []net.Addr
@@ -441,5 +443,12 @@ func main() {
 			sendData, _ = utils.EncryptData(sendData, sessionKey)
 			_ = functions.SendMsg(conn, sendData)
 		}
+	}
+}
+
+func SignalWakeup() {
+	select {
+	case WakeupChan <- struct{}{}:
+	default:
 	}
 }

@@ -309,10 +309,14 @@ void Storage::SelectSettingsMain(SettingsData* settingsData)
         QJsonDocument doc  = QJsonDocument::fromJson(data.toUtf8());
         QJsonObject   json = doc.object();
 
-        settingsData->MainTheme   = json["theme"].toString();
-        settingsData->FontFamily  = json["fontFamily"].toString();
-        settingsData->FontSize    = json["fontSize"].toInt();
-        settingsData->ConsoleTime = json["consoleTime"].toBool();
+        if (json.contains("theme") && !json["theme"].toString().isEmpty())
+            settingsData->MainTheme   = json["theme"].toString();
+        if (json.contains("fontFamily") && !json["fontFamily"].toString().isEmpty())
+            settingsData->FontFamily  = json["fontFamily"].toString();
+        if (json.contains("fontSize") && json["fontSize"].toInt() > 0)
+            settingsData->FontSize    = json["fontSize"].toInt();
+        if (json.contains("consoleTime"))
+            settingsData->ConsoleTime = json["consoleTime"].toBool();
     }
 }
 
@@ -345,16 +349,21 @@ void Storage::SelectSettingsConsole(SettingsData* settingsData)
         settingsData->ConsoleBufferSize        = json["consoleBuffer"].toInt();
         settingsData->ConsoleNoWrap            = json["noWrap"].toBool();
         settingsData->ConsoleAutoScroll        = json["autoScroll"].toBool();
+        settingsData->ConsoleShowBackground    = json.contains("showBackground") ? json["showBackground"].toBool() : true;
+        if (json.contains("consoleTheme"))
+            settingsData->ConsoleTheme = json["consoleTheme"].toString();
     }
 }
 
 void Storage::UpdateSettingsConsole(const SettingsData &settingsData)
 {
     QJsonObject json;
-    json["terminalBuffer"] = settingsData.RemoteTerminalBufferSize;
-    json["consoleBuffer"]  = settingsData.ConsoleBufferSize;
-    json["noWrap"]         = settingsData.ConsoleNoWrap;
-    json["autoScroll"]     = settingsData.ConsoleAutoScroll;
+    json["terminalBuffer"]  = settingsData.RemoteTerminalBufferSize;
+    json["consoleBuffer"]   = settingsData.ConsoleBufferSize;
+    json["noWrap"]          = settingsData.ConsoleNoWrap;
+    json["autoScroll"]      = settingsData.ConsoleAutoScroll;
+    json["showBackground"]  = settingsData.ConsoleShowBackground;
+    json["consoleTheme"]    = settingsData.ConsoleTheme;
     QString data = QJsonDocument(json).toJson(QJsonDocument::Compact);
 
     QSqlQuery query;

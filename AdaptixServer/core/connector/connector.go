@@ -18,8 +18,8 @@ import (
 )
 
 type Teamserver interface {
-	CreateOTP(otpType string, id string) (string, error)
-	ValidateOTP() gin.HandlerFunc
+	CreateOTP(otpType string, data interface{}) (string, error)
+	ValidateOTP(token string) (string, interface{}, bool)
 
 	TsClientExists(username string) bool
 	TsClientDisconnect(username string)
@@ -67,7 +67,7 @@ type Teamserver interface {
 
 	TsChatSendMessage(username string, message string)
 
-	TsDownloadAdd(agentId string, fileId string, fileName string, fileSize int) error
+	TsDownloadAdd(agentId string, fileId string, fileName string, fileSize int64) error
 	TsDownloadUpdate(fileId string, state int, data []byte) error
 	TsDownloadClose(fileId string, reason int) error
 
@@ -127,17 +127,27 @@ type Teamserver interface {
 	TsServiceUnload(serviceName string) error
 	TsServiceCall(serviceName string, operator string, function string, args string)
 	TsServiceList() (string, error)
+
+	TsAxScriptLoadUser(name string, script string) error
+	TsAxScriptUnloadUser(name string) error
+	TsAxScriptList() (string, error)
+	TsAxScriptCommands() (string, error)
+	TsAxScriptResolveHooks(agentName string, agentId string, listenerRegName string, os int, cmdline string, args map[string]interface{}) (string, string, bool, error)
+	TsAxScriptIsServerHook(id string) bool
+	TsAxScriptParseAndExecute(agentId string, username string, cmdline string) error
+	AxGetAgentContext(agentId string) (agentName string, listenerRegName string, osType int, err error)
 }
 
 type TsConnector struct {
-	Interface string
-	Port      int
-	Hash      string
-	OnlyHash  bool
-	Operators map[string]string
-	Endpoint  string
-	Cert      string
-	Key       string
+	Interface          string
+	Port               int
+	Hash               string
+	OnlyHash           bool
+	Operators          map[string]string
+	Endpoint           string
+	Cert               string
+	Key                string
+	ManagePasswordHash string
 
 	httpServer *profile.TsHttpServer
 
@@ -255,6 +265,9 @@ func NewTsConnector(ts Teamserver, tsProfile profile.TsProfile, httpServer profi
 	}
 	connector.Key = tsProfile.Key
 	connector.Cert = tsProfile.Cert
+	if tsProfile.ManagePassword != "" {
+		connector.ManagePasswordHash = krypt.SHA256([]byte(tsProfile.ManagePassword))
+	}
 
 	if httpServer.Error == nil {
 		httpServer.Error = &profile.TsHttpError{}
@@ -308,10 +321,12 @@ func NewTsConnector(ts Teamserver, tsProfile profile.TsProfile, httpServer profi
 	}
 
 	otp_group := connector.Engine.Group(tsProfile.Endpoint)
-	otp_group.Use(ts.ValidateOTP(), default404Middleware(httpErr))
+	otp_group.Use(connector.validateOTPMiddleware(), default404Middleware(httpErr))
 	{
 		otp_group.POST("/otp/upload/temp", connector.tcOTP_UploadTemp)
 		otp_group.GET("/otp/download/sync", connector.tcOTP_DownloadSync)
+		otp_group.GET("/connect", connector.tcConnectOTP)
+		otp_group.GET("/channel", connector.tcChannelOTP)
 	}
 
 	api_group := connector.Engine.Group(tsProfile.Endpoint)
@@ -320,8 +335,6 @@ func NewTsConnector(ts Teamserver, tsProfile profile.TsProfile, httpServer profi
 	{
 		api_group.POST("/sync", connector.tcSync)
 		api_group.POST("/subscribe", connector.tcSubscribe)
-		api_group.GET("/connect", connector.tcConnect)
-		api_group.GET("/channel", connector.tcChannel)
 		api_group.POST("/otp/generate", connector.tcOTP_Generate)
 
 		api_group.GET("/listener/list", connector.TcListenerList)
@@ -337,6 +350,7 @@ func NewTsConnector(ts Teamserver, tsProfile profile.TsProfile, httpServer profi
 
 		api_group.POST("/agent/command/file", connector.TcAgentCommandFile)
 		api_group.POST("/agent/command/execute", connector.TcAgentCommandExecute)
+		api_group.POST("/agent/command/raw", connector.TcAgentCommandRaw)
 		api_group.POST("/agent/console/remove", connector.TcAgentConsoleRemove)
 		api_group.POST("/agent/set/tag", connector.TcAgentSetTag)
 		api_group.POST("/agent/set/mark", connector.TcAgentSetMark)
@@ -381,9 +395,14 @@ func NewTsConnector(ts Teamserver, tsProfile profile.TsProfile, httpServer profi
 		api_group.POST("/tunnel/set/info", connector.TcTunnelSetIno)
 
 		api_group.GET("/service/list", connector.TcServiceList)
-		api_group.POST("/service/load", connector.TcServiceLoad)
-		api_group.POST("/service/unload", connector.TcServiceUnload)
+		//api_group.POST("/service/load", connector.TcServiceLoad)
+		//api_group.POST("/service/unload", connector.TcServiceUnload)
 		api_group.POST("/service/call", connector.TcServiceCall)
+
+		//api_group.POST("/axscript/list", connector.TcAxScriptList)
+		//api_group.POST("/axscript/commands", connector.TcAxScriptCommands)
+		//api_group.POST("/axscript/load", connector.TcAxScriptLoad)
+		//api_group.POST("/axscript/unload", connector.TcAxScriptUnload)
 	}
 
 	connector.Engine.NoRoute(limitTimeoutMiddleware(httpCfg), default404Middleware(httpErr), func(c *gin.Context) { _ = c.Error(errors.New("NoRoute")) })

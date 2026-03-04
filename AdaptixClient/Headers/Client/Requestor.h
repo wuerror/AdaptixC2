@@ -15,6 +15,10 @@ bool HttpReqLogin(AuthProfile* profile);
 bool HttpReqJwtUpdate(AuthProfile* profile);
 
 bool HttpReqGetOTP(const QString &type, const QString &objectId, AuthProfile profile, QString* message, bool* ok);
+bool HttpReqGetOTP(const QString &type, const QJsonObject &data, const QString &baseUrl, const QString &accessToken, QString* otp);
+bool HttpReqGetOTP(const QString &type, const QString &objectId, const QString &baseUrl, const QString &accessToken, QString* otp);
+
+void HttpReqGetOTPAsync(const QString &type, const QString &objectId, AuthProfile& profile, const HttpCallback &callback);
 
 /// ASYNC VERSIONS
 
@@ -62,5 +66,10 @@ void HttpReqTunnelSetInfoAsync(const QString &tunnelId, const QString &info, Aut
 void HttpReqChatSendMessageAsync(const QString &text, AuthProfile& profile, const HttpCallback &callback);
 
 void HttpReqServiceCallAsync(const QString &service, const QString &command, const QString &args, AuthProfile& profile, const HttpCallback &callback);
+
+void HttpReqAxScriptListAsync(AuthProfile& profile, const HttpCallback &callback);
+void HttpReqAxScriptCommandsAsync(AuthProfile& profile, const HttpCallback &callback);
+void HttpReqAxScriptLoadAsync(const QString &name, const QString &script, AuthProfile& profile, const HttpCallback &callback);
+void HttpReqAxScriptUnloadAsync(const QString &name, AuthProfile& profile, const HttpCallback &callback);
 
 #endif

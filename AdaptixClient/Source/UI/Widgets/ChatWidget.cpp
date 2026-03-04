@@ -24,11 +24,11 @@ ChatWidget::ChatWidget(AdaptixWidget* w) : DockTab("Chat", w->GetProfile()->GetP
 
     shortcutSearch = new QShortcut(QKeySequence("Ctrl+L"), chatTextEdit);
     shortcutSearch->setContext(Qt::WidgetShortcut);
-    connect(shortcutSearch, &QShortcut::activated, chatTextEdit, &QTextEdit::clear);
+    connect(shortcutSearch, &QShortcut::activated, chatTextEdit, &QPlainTextEdit::clear);
 
     shortcutSearch = new QShortcut(QKeySequence("Ctrl+A"), chatTextEdit);
     shortcutSearch->setContext(Qt::WidgetShortcut);
-    connect(shortcutSearch, &QShortcut::activated, chatTextEdit, &QTextEdit::selectAll);
+    connect(shortcutSearch, &QShortcut::activated, chatTextEdit, &QPlainTextEdit::selectAll);
 
     this->dockWidget->setWidget(this);
 }
@@ -72,15 +72,15 @@ void ChatWidget::createUI()
     searchLayout->addSpacerItem(spacer);
 
     usernameLabel = new QLabel(this );
-    usernameLabel->setProperty( "LabelStyle", "console" );
+    usernameLabel->setStyleSheet("padding: 4px; color: #BEBEBE; background-color: transparent;");
     usernameLabel->setText( adaptixWidget->GetProfile()->GetUsername() );
 
     chatInput = new QLineEdit(this);
-    chatInput->setProperty( "LineEditStyle", "console" );
+    chatInput->setStyleSheet("background-color: #151515; color: #BEBEBE; border: 1px solid #2A2A2A; padding: 4px; border-radius: 4px;");
 
     chatTextEdit = new TextEditConsole(this);
     chatTextEdit->setReadOnly(true);
-    chatTextEdit->setProperty("TextEditStyle", "console" );
+    chatTextEdit->setStyleSheet("background-color: #151515; color: #BEBEBE; border: 1px solid #2A2A2A; border-radius: 4px;");
 
     chatGridLayout = new QGridLayout(this);
     chatGridLayout->setContentsMargins(0, 1, 0, 4);

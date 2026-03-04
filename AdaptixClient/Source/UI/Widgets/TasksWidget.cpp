@@ -17,13 +17,13 @@ void TaskOutputWidget::createUI()
 {
     inputMessage = new QLineEdit(this);
     inputMessage->setReadOnly(true);
-    inputMessage->setProperty("LineEditStyle", "console");
+    inputMessage->setStyleSheet("background-color: #151515; color: #BEBEBE; border: 1px solid #2A2A2A; padding: 4px; border-radius: 4px;");
     inputMessage->setFont( FontManager::instance().getFont("Hack") );
 
     outputTextEdit = new QTextEdit(this);
     outputTextEdit->setReadOnly(true);
     outputTextEdit->setWordWrapMode(QTextOption::WrapAnywhere);
-    outputTextEdit->setProperty("TextEditStyle", "console" );
+    outputTextEdit->setStyleSheet("background-color: #151515; color: #BEBEBE; border: 1px solid #2A2A2A; border-radius: 4px;");
 
     mainGridLayout = new QGridLayout(this );
     mainGridLayout->setVerticalSpacing(4 );
@@ -69,11 +69,12 @@ TasksWidget::TasksWidget( AdaptixWidget* w )
     dockWidgetOutput->setWidget(taskOutputConsole);
     dockWidgetOutput->setIcon(QIcon( ":/icons/job" ), KDDockWidgets::IconPlace::TabBar);
 
-    connect(tableView,  &QTableWidget::customContextMenuRequested, this, &TasksWidget::handleTasksMenu);
+    connect(tableView,  &QTableView::customContextMenuRequested, this, &TasksWidget::handleTasksMenu);
     connect(tableView->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this](const QItemSelection &selected, const QItemSelection &deselected){
         Q_UNUSED(selected)
         Q_UNUSED(deselected)
-        tableView->setFocus();
+        if (!inputFilter->hasFocus())
+            tableView->setFocus();
     });
 
     connect(tableView->selectionModel(), &QItemSelectionModel::currentRowChanged, this, &TasksWidget::onTableItemSelection);
@@ -179,7 +180,6 @@ void TasksWidget::createUI()
 
     hideButton = new ClickableLabel("  x  ");
     hideButton->setCursor(Qt::PointingHandCursor);
-    hideButton->setStyleSheet("QLabel { color: #888; font-weight: bold; } QLabel:hover { color: #e34234; }");
 
     searchLayout = new QHBoxLayout(searchWidget);
     searchLayout->setContentsMargins(0, 4, 0, 0);
@@ -203,6 +203,7 @@ void TasksWidget::createUI()
 
     tableView = new QTableView(this );
     tableView->setModel(proxyModel);
+    tableView->setHorizontalHeader(new BoldHeaderView(Qt::Horizontal, tableView));
     tableView->setContextMenuPolicy( Qt::CustomContextMenu );
     tableView->setAutoFillBackground( false );
     tableView->setShowGrid( false );
@@ -218,7 +219,7 @@ void TasksWidget::createUI()
     tableView->verticalHeader()->setVisible( false );
     tableView->verticalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents );
 
-    proxyModel->sort(-1);
+    tableView->sortByColumn(TC_StartTime, Qt::AscendingOrder);
 
     tableView->horizontalHeader()->setSectionResizeMode( TC_CommandLine, QHeaderView::Stretch );
     tableView->horizontalHeader()->setSectionResizeMode( TC_Output,      QHeaderView::Stretch );
@@ -368,6 +369,7 @@ void TasksWidget::toggleSearchPanel()
     else {
         this->showPanel = true;
         this->searchWidget->setVisible(true);
+        inputFilter->setFocus();
     }
 }
 

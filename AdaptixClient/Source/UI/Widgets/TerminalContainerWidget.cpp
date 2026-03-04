@@ -8,6 +8,7 @@
 #include <Client/Settings.h>
 #include <Client/AuthProfile.h>
 #include <Client/Requestor.h>
+#include <Utils/FontManager.h>
 #include <MainAdaptix.h>
 
 REGISTER_DOCK_WIDGET(TerminalContainerWidget, "Remote Terminal", false)
@@ -178,19 +179,7 @@ QTermWidget* TerminalTab::Konsole() { return this->termWidget; }
 
 void TerminalTab::SetFont()
 {
-    QFont font = QApplication::font();
-
-#ifdef Q_OS_MACOS
-    font.setFamily(QStringLiteral("Monaco"));
-#elif defined(Q_OS_WIN)
-    font.setFamily(QStringLiteral("Consolas"));
-#elif defined(Q_WS_QWS)
-    font.setFamily(QStringLiteral("fixed"));
-#else
-    font.setFamily(QStringLiteral("Monospace"));
-#endif
-
-    font.setPointSize(10);
+    QFont font = FontManager::instance().getFont("Hack", 10);
     termWidget->setTerminalFont(font);
 }
 
@@ -302,7 +291,7 @@ void TerminalTab::onStart()
 
     QString agentId = this->agent->data.Id;
     QString terminalId = GenerateRandomString(8, "hex");
-    QString program    = programInput->text().toUtf8().toBase64();
+    QString program    = programInput->text();
     int sizeW  = this->termWidget->columns();
     int sizeH  = this->termWidget->lines();
     int OecmCP = this->agent->data.OemCP;
@@ -312,10 +301,27 @@ void TerminalTab::onStart()
         sizeH = 24;
     }
 
-    QString terminalData = QString("%1|%2|%3|%4|%5|%6").arg(agentId).arg(terminalId).arg(program).arg(sizeH).arg(sizeW).arg(OecmCP).toUtf8().toBase64();
+    QJsonObject otpData;
+    otpData["agent_id"]     = agentId;
+    otpData["terminal_id"]  = terminalId;
+    otpData["program"]      = program;
+    otpData["size_h"]       = sizeH;
+    otpData["size_w"]       = sizeW;
+    otpData["oem_cp"]       = OecmCP;
+
+    QString otp;
+    bool otpResult = HttpReqGetOTP("channel_terminal", otpData, profile->GetURL(), profile->GetAccessToken(), &otp);
+    if (!otpResult) {
+        programInput->setEnabled(true);
+        programComboBox->setEnabled(true);
+        startButton->setEnabled(true);
+        stopButton->setEnabled(false);
+        this->setStatus("OTP error");
+        return;
+    }
 
     terminalThread = new QThread;
-    terminalWorker = new TerminalWorker(this, profile->GetAccessToken(), sUrl, terminalData);
+    terminalWorker = new TerminalWorker(this, otp, sUrl);
     terminalWorker->moveToThread(terminalThread);
 
     connect(terminalThread, &QThread::started,         terminalWorker, &TerminalWorker::start);
@@ -598,18 +604,12 @@ TerminalContainerWidget::TerminalContainerWidget(Agent* a, AdaptixWidget* w, Ter
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
-    tabWidget = new QTabWidget(this);
-    tabWidget->setTabPosition(QTabWidget::West);
+    tabWidget = new VerticalTabWidget(this);
     tabWidget->setTabsClosable(true);
-    tabWidget->setMovable(true);
+    tabWidget->tabBar()->setShowAddButton(true);
 
-    addTabButton = new QPushButton("+", this);
-    addTabButton->setFixedSize(30, 30);
-    addTabButton->setToolTip("Add new terminal");
-    tabWidget->setCornerWidget(addTabButton, Qt::BottomLeftCorner);
-
-    connect(addTabButton, &QPushButton::clicked,          this, &TerminalContainerWidget::addNewTerminal);
-    connect(tabWidget,    &QTabWidget::tabCloseRequested, this, &TerminalContainerWidget::onTabCloseRequested);
+    connect(tabWidget->tabBar(), &VerticalTabBar::addTabRequested,      this, &TerminalContainerWidget::addNewTerminal);
+    connect(tabWidget,                 &VerticalTabWidget::tabCloseRequested, this, &TerminalContainerWidget::onTabCloseRequested);
 
     mainLayout->addWidget(tabWidget);
     this->setLayout(mainLayout);

@@ -19,7 +19,8 @@ ListenersWidget::ListenersWidget(AdaptixWidget* w) : DockTab("Listeners", w->Get
     connect(tableView->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this](const QItemSelection &selected, const QItemSelection &deselected){
             Q_UNUSED(selected)
             Q_UNUSED(deselected)
-            tableView->setFocus();
+            if (!inputFilter->hasFocus())
+                tableView->setFocus();
     });
     connect(inputFilter, &QLineEdit::textChanged,   this, &ListenersWidget::onFilterUpdate);
     connect(inputFilter, &QLineEdit::returnPressed, this, [this]() { proxyModel->setTextFilter(inputFilter->text()); });
@@ -40,6 +41,11 @@ ListenersWidget::~ListenersWidget() = default;
 
 void ListenersWidget::SetUpdatesEnabled(const bool enabled)
 {
+    if (proxyModel)
+        proxyModel->setDynamicSortFilter(enabled);
+    if (tableView)
+        tableView->setSortingEnabled(enabled);
+
     tableView->setUpdatesEnabled(enabled);
 }
 
@@ -60,7 +66,6 @@ void ListenersWidget::createUI()
 
     hideButton = new ClickableLabel("  x  ");
     hideButton->setCursor(Qt::PointingHandCursor);
-    hideButton->setStyleSheet("QLabel { color: #888; font-weight: bold; } QLabel:hover { color: #e34234; }");
 
     searchLayout = new QHBoxLayout(searchWidget);
     searchLayout->setContentsMargins(0, 4, 0, 0);
@@ -78,6 +83,7 @@ void ListenersWidget::createUI()
 
     tableView = new QTableView(this);
     tableView->setModel(proxyModel);
+    tableView->setHorizontalHeader(new BoldHeaderView(Qt::Horizontal, tableView));
     tableView->setContextMenuPolicy(Qt::CustomContextMenu);
     tableView->setAutoFillBackground(false);
     tableView->setShowGrid(false);
@@ -94,7 +100,7 @@ void ListenersWidget::createUI()
     tableView->verticalHeader()->setVisible(false);
 
     tableView->setItemDelegate(new PaddingDelegate(tableView));
-    tableView->sortByColumn(LC_Date, Qt::DescendingOrder);
+    tableView->sortByColumn(LC_Date, Qt::AscendingOrder);
 
     mainGridLayout = new QGridLayout(this);
     mainGridLayout->setContentsMargins(0, 0, 0, 0);

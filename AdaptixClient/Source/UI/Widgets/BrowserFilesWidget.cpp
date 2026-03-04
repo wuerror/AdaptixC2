@@ -1,5 +1,6 @@
 #include <Agent/Agent.h>
 #include <Utils/FileSystem.h>
+#include <Utils/CustomElements.h>
 #include <Utils/NonBlockingDialogs.h>
 #include <UI/Widgets/AdaptixWidget.h>
 #include <UI/Widgets/BrowserFilesWidget.h>
@@ -60,9 +61,14 @@ BrowserFilesWidget::BrowserFilesWidget(const AdaptixWidget* w, Agent* a) : DockT
     connect(buttonReload,      &QPushButton::clicked,                     this, &BrowserFilesWidget::onReload);
     connect(buttonUpload,      &QPushButton::clicked,                     this, &BrowserFilesWidget::onUpload);
     connect(inputPath,         &QLineEdit::returnPressed,                 this, &BrowserFilesWidget::onList);
-    connect(tableWidget,       &QTableWidget::doubleClicked,              this, &BrowserFilesWidget::handleTableDoubleClicked);
+    connect(tableView,       &QTableView::doubleClicked,              this, &BrowserFilesWidget::handleTableDoubleClicked);
     connect(treeBrowserWidget, &QTreeWidget::itemDoubleClicked,           this, &BrowserFilesWidget::handleTreeDoubleClicked);
-    connect(tableWidget,       &QTableWidget::customContextMenuRequested, this, &BrowserFilesWidget::handleTableMenu );
+    connect(tableView,       &QTableView::customContextMenuRequested, this, &BrowserFilesWidget::handleTableMenu );
+    connect(tableView->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this](const QItemSelection &selected, const QItemSelection &deselected){
+        Q_UNUSED(selected)
+        Q_UNUSED(deselected)
+        tableView->setFocus();
+    });
 
     this->dockWidget->setWidget(this);
 }
@@ -108,37 +114,42 @@ void BrowserFilesWidget::createUI()
     statusLabel = new QLabel(this);
     statusLabel->setText("Status: ");
 
-    tableWidget = new QTableWidget(this );
-    tableWidget->setContextMenuPolicy( Qt::CustomContextMenu );
-    tableWidget->setAutoFillBackground( false );
-    tableWidget->setShowGrid( false );
-    tableWidget->setSortingEnabled( false );
-    tableWidget->setWordWrap( true );
-    tableWidget->setCornerButtonEnabled( true );
-    tableWidget->setSelectionBehavior( QAbstractItemView::SelectRows );
-    tableWidget->setFocusPolicy( Qt::NoFocus );
-    tableWidget->setAlternatingRowColors( true );
-    tableWidget->horizontalHeader()->setSectionResizeMode( QHeaderView::Stretch );
-    tableWidget->horizontalHeader()->setCascadingSectionResizes( true );
-    tableWidget->horizontalHeader()->setHighlightSections( false );
-    tableWidget->verticalHeader()->setVisible( false );
+    tableModel = new QStandardItemModel(this);
+
+    tableView = new QTableView(this );
+    tableView->setModel(tableModel);
+    tableView->setHorizontalHeader(new BoldHeaderView(Qt::Horizontal, tableView));
+    tableView->setContextMenuPolicy( Qt::CustomContextMenu );
+    tableView->setAutoFillBackground( false );
+    tableView->setShowGrid( false );
+    tableView->setSortingEnabled( false );
+    tableView->setWordWrap( true );
+    tableView->setCornerButtonEnabled( true );
+    tableView->setSelectionBehavior( QAbstractItemView::SelectRows );
+    tableView->setFocusPolicy( Qt::NoFocus );
+    tableView->setAlternatingRowColors( true );
+    tableView->horizontalHeader()->setSectionResizeMode( QHeaderView::Stretch );
+    tableView->horizontalHeader()->setCascadingSectionResizes( true );
+    tableView->horizontalHeader()->setHighlightSections( false );
+    tableView->verticalHeader()->setVisible( false );
+    tableView->setItemDelegate(new PaddingDelegate(tableView));
 
     if (agent->data.Os == OS_WINDOWS) {
-        tableWidget->setColumnCount(3);
-        tableWidget->setHorizontalHeaderItem( 0, new QTableWidgetItem( "Name" ) );
-        tableWidget->setHorizontalHeaderItem( 1, new QTableWidgetItem( "Size" ) );
-        tableWidget->setHorizontalHeaderItem( 2, new QTableWidgetItem( "Last Modified" ) );
-        tableWidget->setIconSize(QSize(25, 25));
+        tableModel->setColumnCount(3);
+        tableModel->setHorizontalHeaderItem( 0, new QStandardItem( "Name" ) );
+        tableModel->setHorizontalHeaderItem( 1, new QStandardItem( "Size" ) );
+        tableModel->setHorizontalHeaderItem( 2, new QStandardItem( "Last Modified" ) );
+        tableView->setIconSize(QSize(25, 25));
     }
     else {
-        tableWidget->setColumnCount(6);
-        tableWidget->setHorizontalHeaderItem( 0, new QTableWidgetItem( "Name" ) );
-        tableWidget->setHorizontalHeaderItem( 1, new QTableWidgetItem( "Mode" ) );
-        tableWidget->setHorizontalHeaderItem( 2, new QTableWidgetItem( "User" ) );
-        tableWidget->setHorizontalHeaderItem( 3, new QTableWidgetItem( "Group" ) );
-        tableWidget->setHorizontalHeaderItem( 4, new QTableWidgetItem( "Size" ) );
-        tableWidget->setHorizontalHeaderItem( 5, new QTableWidgetItem( "Last Modified" ) );
-        tableWidget->setIconSize(QSize(25, 25));
+        tableModel->setColumnCount(6);
+        tableModel->setHorizontalHeaderItem( 0, new QStandardItem( "Name" ) );
+        tableModel->setHorizontalHeaderItem( 1, new QStandardItem( "Mode" ) );
+        tableModel->setHorizontalHeaderItem( 2, new QStandardItem( "User" ) );
+        tableModel->setHorizontalHeaderItem( 3, new QStandardItem( "Group" ) );
+        tableModel->setHorizontalHeaderItem( 4, new QStandardItem( "Size" ) );
+        tableModel->setHorizontalHeaderItem( 5, new QStandardItem( "Last Modified" ) );
+        tableView->setIconSize(QSize(25, 25));
     }
 
     listGridLayout = new QGridLayout(this);
@@ -155,7 +166,7 @@ void BrowserFilesWidget::createUI()
     listGridLayout->addWidget( buttonDisks,  0, 10, 1, 1  );
     listGridLayout->addWidget( line_2,       0, 11, 1, 1  );
     listGridLayout->addWidget( statusLabel,  0, 12, 1, 1  );
-    listGridLayout->addWidget( tableWidget,  1, 0,  1, 13 );
+    listGridLayout->addWidget( tableView,  1, 0,  1, 13 );
 
     listBrowserWidget = new QWidget(this);
     listBrowserWidget->setLayout(listGridLayout);
@@ -449,43 +460,42 @@ void BrowserFilesWidget::setStoredFileData(const QString &path, const BrowserFil
 
 void BrowserFilesWidget::tableShowItems(QVector<BrowserFileData*> files ) const
 {
-    for (int index = tableWidget->rowCount(); index > 0; index-- )
-        tableWidget->removeRow(index -1 );
+    tableModel->removeRows(0, tableModel->rowCount());
 
-    tableWidget->setRowCount(files.size());
+    tableModel->setRowCount(files.size());
     for (int row = 0; row < files.size(); ++row) {
 
-        QTableWidgetItem* item_Name = new QTableWidgetItem(files[row]->Name);
+        auto* item_Name = new QStandardItem(files[row]->Name);
         item_Name->setIcon(GetFileSystemIcon( files[row]->Type, files[row]->Stored) );
-        item_Name->setFlags( item_Name->flags() ^ Qt::ItemIsEditable );
+        item_Name->setFlags( item_Name->flags() & ~Qt::ItemIsEditable );
 
-        QTableWidgetItem* item_Size = new QTableWidgetItem(files[row]->Size);
-        item_Size->setFlags( item_Size->flags() ^ Qt::ItemIsEditable );
+        auto* item_Size = new QStandardItem(files[row]->Size);
+        item_Size->setFlags( item_Size->flags() & ~Qt::ItemIsEditable );
 
-        QTableWidgetItem* item_Date = new QTableWidgetItem(files[row]->Modified);
-        item_Date->setFlags( item_Date->flags() ^ Qt::ItemIsEditable );
+        auto* item_Date = new QStandardItem(files[row]->Modified);
+        item_Date->setFlags( item_Date->flags() & ~Qt::ItemIsEditable );
 
         if (this->agent->data.Os == OS_WINDOWS) {
-            tableWidget->setItem(row, 0, item_Name);
-            tableWidget->setItem(row, 1, item_Size);
-            tableWidget->setItem(row, 2, item_Date);
+            tableModel->setItem(row, 0, item_Name);
+            tableModel->setItem(row, 1, item_Size);
+            tableModel->setItem(row, 2, item_Date);
         }
         else {
-            QTableWidgetItem* item_Mode = new QTableWidgetItem(files[row]->Mode);
-            item_Mode->setFlags( item_Mode->flags() ^ Qt::ItemIsEditable );
+            auto* item_Mode = new QStandardItem(files[row]->Mode);
+            item_Mode->setFlags( item_Mode->flags() & ~Qt::ItemIsEditable );
 
-            QTableWidgetItem* item_User = new QTableWidgetItem(files[row]->User);
-            item_User->setFlags( item_User->flags() ^ Qt::ItemIsEditable );
+            auto* item_User = new QStandardItem(files[row]->User);
+            item_User->setFlags( item_User->flags() & ~Qt::ItemIsEditable );
 
-            QTableWidgetItem* item_Group = new QTableWidgetItem(files[row]->Group);
-            item_Group->setFlags( item_Group->flags() ^ Qt::ItemIsEditable );
+            auto* item_Group = new QStandardItem(files[row]->Group);
+            item_Group->setFlags( item_Group->flags() & ~Qt::ItemIsEditable );
 
-            tableWidget->setItem(row, 0, item_Name);
-            tableWidget->setItem(row, 1, item_Mode);
-            tableWidget->setItem(row, 2, item_User);
-            tableWidget->setItem(row, 3, item_Group);
-            tableWidget->setItem(row, 4, item_Size);
-            tableWidget->setItem(row, 5, item_Date);
+            tableModel->setItem(row, 0, item_Name);
+            tableModel->setItem(row, 1, item_Mode);
+            tableModel->setItem(row, 2, item_User);
+            tableModel->setItem(row, 3, item_Group);
+            tableModel->setItem(row, 4, item_Size);
+            tableModel->setItem(row, 5, item_Date);
 
         }
     }
@@ -603,7 +613,7 @@ void BrowserFilesWidget::onUpload() const
 
 void BrowserFilesWidget::handleTableDoubleClicked(const QModelIndex &index)
 {
-    QString filename = tableWidget->item(index.row(),0)->text();
+    QString filename = tableModel->item(index.row(),0)->text();
 
     QString path = filename;
     if ( !currentPath.isEmpty() ) {
@@ -629,7 +639,7 @@ void BrowserFilesWidget::handleTreeDoubleClicked(QTreeWidgetItem* item, int colu
 
 void BrowserFilesWidget::handleTableMenu(const QPoint &pos)
 {
-    if ( !tableWidget->itemAt(pos) || currentPath.isEmpty())
+    if ( !tableView->indexAt(pos).isValid() || currentPath.isEmpty())
         return;
 
     if ( !(agent && agent->adaptixWidget && agent->adaptixWidget->ScriptManager) )
@@ -646,10 +656,10 @@ void BrowserFilesWidget::handleTableMenu(const QPoint &pos)
     }
 
     QVector<DataMenuFileBrowser> items;
-    for( int rowIndex = 0 ; rowIndex < tableWidget->rowCount() ; rowIndex++ ) {
-        if ( tableWidget->item(rowIndex, 0)->isSelected() ) {
+    for( int rowIndex = 0 ; rowIndex < tableModel->rowCount() ; rowIndex++ ) {
+        if ( tableView->selectionModel()->isSelected(tableModel->index(rowIndex, 0)) ) {
 
-            auto filename = tableWidget->item( rowIndex, 0 )->text();
+            auto filename = tableModel->item( rowIndex, 0 )->text();
             auto fullname = path + filename;
             if (this->agent->data.Os == OS_WINDOWS)
                 fullname = fullname.toLower();
@@ -673,5 +683,5 @@ void BrowserFilesWidget::handleTableMenu(const QPoint &pos)
 
     agent->adaptixWidget->ScriptManager->AddMenuFileBrowser(&ctxMenu, items);
 
-    ctxMenu.exec(tableWidget->horizontalHeader()->viewport()->mapToGlobal(pos));
+    ctxMenu.exec(tableView->horizontalHeader()->viewport()->mapToGlobal(pos));
 }

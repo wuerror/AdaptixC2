@@ -1,8 +1,6 @@
 package eventing
 
-import (
-	adaptix "github.com/Adaptix-Framework/axc2"
-)
+import "github.com/Adaptix-Framework/axc2"
 
 type EventType string
 
@@ -179,7 +177,7 @@ type EventDataDownloadStart struct {
 	AgentId  string
 	FileId   string
 	FileName string
-	FileSize int
+	FileSize int64
 }
 
 type EventDataDownloadFinish struct {

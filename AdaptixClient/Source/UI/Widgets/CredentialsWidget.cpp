@@ -14,12 +14,13 @@ CredentialsWidget::CredentialsWidget(AdaptixWidget* w) : DockTab("Credentials", 
 {
     this->createUI();
 
-    connect(tableView, &QTableWidget::customContextMenuRequested, this, &CredentialsWidget::handleCredentialsMenu);
-    connect(tableView, &QTableWidget::doubleClicked,              this, &CredentialsWidget::onEditCreds);
+    connect(tableView, &QTableView::customContextMenuRequested, this, &CredentialsWidget::handleCredentialsMenu);
+    connect(tableView, &QTableView::doubleClicked,              this, &CredentialsWidget::onEditCreds);
     connect(tableView->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this](const QItemSelection &selected, const QItemSelection &deselected){
         Q_UNUSED(selected)
         Q_UNUSED(deselected)
-        tableView->setFocus();
+        if (!inputFilter->hasFocus())
+            tableView->setFocus();
     });
     connect(hideButton,      &ClickableLabel::clicked,       this, &CredentialsWidget::toggleSearchPanel);
     connect(inputFilter,     &QLineEdit::textChanged,        this, &CredentialsWidget::onFilterUpdate);
@@ -114,7 +115,6 @@ void CredentialsWidget::createUI()
 
     hideButton = new ClickableLabel("  x  ");
     hideButton->setCursor(Qt::PointingHandCursor);
-    hideButton->setStyleSheet("QLabel { color: #888; font-weight: bold; } QLabel:hover { color: #e34234; }");
 
     searchLayout = new QHBoxLayout(searchWidget);
     searchLayout->setContentsMargins(0, 5, 0, 0);
@@ -136,6 +136,7 @@ void CredentialsWidget::createUI()
 
     tableView = new QTableView( this );
     tableView->setModel(proxyModel);
+    tableView->setHorizontalHeader(new BoldHeaderView(Qt::Horizontal, tableView));
     tableView->setContextMenuPolicy( Qt::CustomContextMenu );
     tableView->setAutoFillBackground( false );
     tableView->setShowGrid( false );
@@ -150,7 +151,7 @@ void CredentialsWidget::createUI()
     tableView->horizontalHeader()->setHighlightSections( false );
     tableView->verticalHeader()->setVisible( false );
 
-    proxyModel->sort(-1);
+    tableView->sortByColumn(CC_Date, Qt::AscendingOrder);
 
     tableView->horizontalHeader()->setSectionResizeMode( CC_Password, QHeaderView::Stretch );
 
@@ -376,6 +377,7 @@ void CredentialsWidget::toggleSearchPanel() const
     else {
         this->searchWidget->setVisible(true);
         proxyModel->setSearchVisible(true);
+        inputFilter->setFocus();
     }
 }
 

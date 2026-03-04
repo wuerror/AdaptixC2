@@ -103,6 +103,13 @@ docker-build-server:
 	@ docker compose --profile build-server down
 	@ echo "[+] Server built via Docker"
 
+docker-build-client:
+	@ echo "[*] Building client via Docker..."
+	@ docker compose --profile build-client build
+	@ docker compose --profile build-client up --abort-on-container-exit
+	@ docker compose --profile build-client down
+	@ echo "[+] Client AppImage built via Docker"
+
 docker-build-extenders:
 	@ echo "[*] Building extenders via Docker..."
 	@ docker compose --profile build-extenders build
@@ -160,6 +167,7 @@ help:
 	@ echo ""
 	@ echo "Docker commands:"
 	@ echo "  docker-build-server     - Build server via Docker Compose"
+	@ echo "  docker-build-client     - Build client AppImage via Docker Compose"
 	@ echo "  docker-build-extenders  - Build extenders via Docker Compose"
 	@ echo "  docker-build-server-ext - Build server and extenders via Docker Compose"
 	@ echo "  docker-build-all        - Build server and extenders via Docker Compose (alias)"

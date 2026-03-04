@@ -100,7 +100,8 @@ ScreenshotsWidget::ScreenshotsWidget(AdaptixWidget* w) : DockTab("Screenshots", 
     connect(tableView->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this](const QItemSelection &selected, const QItemSelection &deselected){
         Q_UNUSED(selected)
         Q_UNUSED(deselected)
-        tableView->setFocus();
+        if (!inputFilter->hasFocus())
+            tableView->setFocus();
     });
     connect(tableView->selectionModel(), &QItemSelectionModel::currentRowChanged, this, &ScreenshotsWidget::onTableItemSelection);
     connect(hideButton,  &ClickableLabel::clicked,  this, &ScreenshotsWidget::toggleSearchPanel);
@@ -180,7 +181,6 @@ void ScreenshotsWidget::createUI()
 
     hideButton = new ClickableLabel("  x  ");
     hideButton->setCursor(Qt::PointingHandCursor);
-    hideButton->setStyleSheet("QLabel { color: #888; font-weight: bold; } QLabel:hover { color: #e34234; }");
 
     searchLayout = new QHBoxLayout(searchWidget);
     searchLayout->setContentsMargins(0, 5, 0, 0);
@@ -198,6 +198,7 @@ void ScreenshotsWidget::createUI()
 
     tableView = new QTableView(this);
     tableView->setModel(proxyModel);
+    tableView->setHorizontalHeader(new BoldHeaderView(Qt::Horizontal, tableView));
     tableView->setContextMenuPolicy(Qt::CustomContextMenu);
     tableView->setAutoFillBackground(false);
     tableView->setShowGrid(false);
@@ -213,7 +214,7 @@ void ScreenshotsWidget::createUI()
     tableView->horizontalHeader()->setHighlightSections(false);
     tableView->verticalHeader()->setVisible(false);
 
-    proxyModel->sort(-1);
+    tableView->sortByColumn(SCR_Date, Qt::AscendingOrder);
 
     tableView->horizontalHeader()->setSectionResizeMode(SCR_Note, QHeaderView::Stretch);
     tableView->setItemDelegate(new PaddingDelegate(tableView));

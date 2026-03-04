@@ -40,6 +40,7 @@ class AxConsoleWidget : public DockTab
     void createUI();
     void findAndHighlightAll(const QString& pattern);
     void highlightCurrent() const;
+    void applyTheme();
 
 public:
     explicit AxConsoleWidget(AxScriptManager* m, AdaptixWidget* w);

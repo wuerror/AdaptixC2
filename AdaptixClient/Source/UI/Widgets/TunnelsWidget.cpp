@@ -19,7 +19,8 @@ TunnelsWidget::TunnelsWidget(AdaptixWidget* w) : DockTab("Tunnels", w->GetProfil
     connect(tableView->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this](const QItemSelection &selected, const QItemSelection &deselected){
             Q_UNUSED(selected)
             Q_UNUSED(deselected)
-            tableView->setFocus();
+            if (!inputFilter->hasFocus())
+                tableView->setFocus();
     });
     connect(inputFilter, &QLineEdit::textChanged,   this, &TunnelsWidget::onFilterUpdate);
     connect(inputFilter, &QLineEdit::returnPressed, this, [this]() { proxyModel->setTextFilter(inputFilter->text()); });
@@ -60,7 +61,6 @@ void TunnelsWidget::createUI()
 
     hideButton = new ClickableLabel("  x  ");
     hideButton->setCursor(Qt::PointingHandCursor);
-    hideButton->setStyleSheet("QLabel { color: #888; font-weight: bold; } QLabel:hover { color: #e34234; }");
 
     searchLayout = new QHBoxLayout(searchWidget);
     searchLayout->setContentsMargins(0, 4, 0, 0);
@@ -78,6 +78,7 @@ void TunnelsWidget::createUI()
 
     tableView = new QTableView(this);
     tableView->setModel(proxyModel);
+    tableView->setHorizontalHeader(new BoldHeaderView(Qt::Horizontal, tableView));
     tableView->setContextMenuPolicy(Qt::CustomContextMenu);
     tableView->setAutoFillBackground(false);
     tableView->setShowGrid(false);

@@ -47,7 +47,7 @@ type Teamserver interface {
 	TsTaskUpdate(agentId string, data adaptix.TaskData)
 	TsTaskGetAvailableAll(agentId string, availableSize int) ([]adaptix.TaskData, error)
 
-	TsDownloadAdd(agentId string, fileId string, fileName string, fileSize int) error
+	TsDownloadAdd(agentId string, fileId string, fileName string, fileSize int64) error
 	TsDownloadUpdate(fileId string, state int, data []byte) error
 	TsDownloadClose(fileId string, reason int) error
 	TsDownloadSave(agentId string, fileId string, filename string, content []byte) error
@@ -781,6 +781,8 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 
 			taskData.TaskId = fmt.Sprintf("%08x", taskId)
 
+			asyncMode := getBoolArg(args, "-a")
+
 			bofFile, err := getStringArg(args, "bof")
 			if err != nil {
 				goto RET
@@ -797,7 +799,11 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 			}
 
 			packerData, _ := msgpack.Marshal(ParamsExecBof{Object: bofContent, ArgsPack: paramData, Task: taskData.TaskId})
-			cmd = Command{Code: COMMAND_EXEC_BOF, Data: packerData}
+			if asyncMode {
+				cmd = Command{Code: COMMAND_EXEC_BOF_ASYNC, Data: packerData}
+			} else {
+				cmd = Command{Code: COMMAND_EXEC_BOF, Data: packerData}
+			}
 		} else {
 			err = errors.New("subcommand must be 'bof'")
 			goto RET
@@ -1207,9 +1213,9 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 					} else if msg.Type == CALLBACK_ERROR {
 						task.MessageType = adaptix.MESSAGE_ERROR
 						task.Message = "BOF error"
-						task.ClearText += Ts.TsConvertCpToUTF8(string(msg.Data), agentData.ACP) + "\n"
+						task.ClearText += ensureNewline(Ts.TsConvertCpToUTF8(string(msg.Data), agentData.ACP))
 					} else {
-						task.ClearText += Ts.TsConvertCpToUTF8(string(msg.Data), agentData.ACP) + "\n"
+						task.ClearText += ensureNewline(Ts.TsConvertCpToUTF8(string(msg.Data), agentData.ACP))
 					}
 				}
 
@@ -1241,6 +1247,8 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 							stringType = "Download"
 						} else if value.JobType == 0x3 {
 							stringType = "Process"
+						} else if value.JobType == 0x6 {
+							stringType = "Async BOF"
 						}
 
 						Output += fmt.Sprintf("\n %-10v  %-13s", value.JobId, stringType)
@@ -1790,7 +1798,7 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 
 				if params.Start {
 					task.Message = fmt.Sprintf("The download of the '%s' file (%v bytes) has started: [fid %v]", params.Path, params.Size, fileId)
-					_ = Ts.TsDownloadAdd(agentData.Id, fileId, params.Path, params.Size)
+					_ = Ts.TsDownloadAdd(agentData.Id, fileId, params.Path, int64(params.Size))
 				}
 
 				_ = Ts.TsDownloadUpdate(fileId, 1, params.Content)
@@ -1809,6 +1817,80 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 					if !params.Start {
 						continue
 					}
+				}
+
+			case COMMAND_EXEC_BOF_ASYNC:
+
+				var params AnsExecBofAsync
+				err := msgpack.Unmarshal(job.Data, &params)
+				if err != nil {
+					goto HANDLER
+				}
+
+				var msgs []BofMsg
+				err = msgpack.Unmarshal(params.Msgs, &msgs)
+				if err != nil {
+					goto HANDLER
+				}
+
+				task.Completed = false
+
+				if params.Start {
+					task.Message = fmt.Sprintf("Start async BOF [%v]", task.TaskId)
+				} else if !params.Finish {
+					task.Message = fmt.Sprintf("Async BOF [%v] output", task.TaskId)
+				}
+
+				for _, msg := range msgs {
+
+					if msg.Type == CALLBACK_AX_SCREENSHOT {
+						buf := bytes.NewReader(msg.Data)
+						var length uint32
+						if err := binary.Read(buf, binary.LittleEndian, &length); err != nil {
+							continue
+						}
+						note := make([]byte, length)
+						if _, err := buf.Read(note); err != nil {
+							continue
+						}
+						screen := make([]byte, len(msg.Data)-4-int(length))
+						if _, err := buf.Read(screen); err != nil {
+							continue
+						}
+
+						_ = Ts.TsScreenshotAdd(agentData.Id, string(note), screen)
+
+					} else if msg.Type == CALLBACK_AX_DOWNLOAD_MEM {
+						buf := bytes.NewReader(msg.Data)
+						var length uint32
+						if err := binary.Read(buf, binary.LittleEndian, &length); err != nil {
+							continue
+						}
+						filename := make([]byte, length)
+						if _, err := buf.Read(filename); err != nil {
+							continue
+						}
+						data := make([]byte, len(msg.Data)-4-int(length))
+						if _, err := buf.Read(data); err != nil {
+							continue
+						}
+						name := Ts.TsConvertCpToUTF8(string(filename), agentData.ACP)
+						fileId := fmt.Sprintf("%08x", mrand.Uint32())
+
+						_ = Ts.TsDownloadSave(agentData.Id, fileId, name, data)
+
+					} else if msg.Type == CALLBACK_ERROR {
+						task.MessageType = adaptix.MESSAGE_ERROR
+						task.Message = fmt.Sprintf("Async BOF [%v] error", task.TaskId)
+						task.ClearText += ensureNewline(Ts.TsConvertCpToUTF8(string(msg.Data), agentData.ACP))
+					} else {
+						task.ClearText += ensureNewline(Ts.TsConvertCpToUTF8(string(msg.Data), agentData.ACP))
+					}
+				}
+
+				if params.Finish {
+					task.Message = fmt.Sprintf("Async BOF [%v] finished", task.TaskId)
+					task.Completed = true
 				}
 
 			case COMMAND_RUN:

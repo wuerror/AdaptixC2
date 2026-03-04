@@ -27,7 +27,8 @@ DownloadsWidget::DownloadsWidget(AdaptixWidget* w) : DockTab("Downloads", w->Get
     connect(tableView->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this](const QItemSelection &selected, const QItemSelection &deselected){
         Q_UNUSED(selected)
         Q_UNUSED(deselected)
-        tableView->setFocus();
+        if (!inputFilter->hasFocus())
+            tableView->setFocus();
     });
     connect(hideButton,     &ClickableLabel::clicked,        this, &DownloadsWidget::toggleSearchPanel);
     connect(inputFilter,     &QLineEdit::textChanged,        this, &DownloadsWidget::onFilterUpdate);
@@ -66,7 +67,6 @@ void DownloadsWidget::createUI()
 
     hideButton = new ClickableLabel("  x  ");
     hideButton->setCursor(Qt::PointingHandCursor);
-    hideButton->setStyleSheet("QLabel { color: #888; font-weight: bold; } QLabel:hover { color: #e34234; }");
 
     searchLayout = new QHBoxLayout(searchWidget);
     searchLayout->setContentsMargins(0, 5, 0, 0);
@@ -86,6 +86,7 @@ void DownloadsWidget::createUI()
 
     tableView = new QTableView(this);
     tableView->setModel(proxyModel);
+    tableView->setHorizontalHeader(new BoldHeaderView(Qt::Horizontal, tableView));
     tableView->setContextMenuPolicy(Qt::CustomContextMenu);
     tableView->setAutoFillBackground(false);
     tableView->setShowGrid(false);
@@ -102,7 +103,7 @@ void DownloadsWidget::createUI()
 
     tableView->setItemDelegate(new PaddingDelegate(tableView));
 
-    proxyModel->sort(-1);
+    tableView->sortByColumn(DC_Date, Qt::AscendingOrder);
 
     tableView->horizontalHeader()->setSectionResizeMode(DC_File, QHeaderView::Stretch);
     tableView->setItemDelegateForColumn(DC_Progress, new ProgressBarDelegate(this));
@@ -182,7 +183,7 @@ void DownloadsWidget::AddDownloadItem(const DownloadData &newDownload)
     downloadsModel->add(newDownload);
 }
 
-void DownloadsWidget::EditDownloadItem(const QString &fileId, int recvSize, int state)
+void DownloadsWidget::EditDownloadItem(const QString &fileId, qint64 recvSize, int state)
 {
     {
         QWriteLocker locker(&adaptixWidget->DownloadsLock);
@@ -388,7 +389,7 @@ void DownloadsWidget::actionSyncCurl()
     QString fileName = extractFileName(filePath);
     QString sUrl = adaptixWidget->GetProfile()->GetURL() + "/otp/download/sync";
 
-    QString command = QString("curl -k %1 -H 'OTP: %2' -o %3").arg(sUrl).arg(otp).arg(fileName);
+    QString command = QString("curl -k '%1?otp=%2' -o %3").arg(sUrl).arg(otp).arg(fileName);
 
     QInputDialog inputDialog;
     inputDialog.setWindowTitle("Sync file as curl");
@@ -424,7 +425,7 @@ void DownloadsWidget::actionSyncWget()
     QString fileName = extractFileName(filePath);
     QString sUrl = adaptixWidget->GetProfile()->GetURL() + "/otp/download/sync";
 
-    QString command = QString("wget --no-check-certificate %1 --header='OTP: %2' -O %3").arg(sUrl).arg(otp).arg(fileName);
+    QString command = QString("wget --no-check-certificate '%1?otp=%2' -O %3").arg(sUrl).arg(otp).arg(fileName);
 
     QInputDialog inputDialog;
     inputDialog.setWindowTitle("Sync file as wget");

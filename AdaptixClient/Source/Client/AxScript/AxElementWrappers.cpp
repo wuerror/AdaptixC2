@@ -2,6 +2,7 @@
 #include <Client/AxScript/AxScriptEngine.h>
 #include <Client/AxScript/AxScriptManager.h>
 #include <Agent/Agent.h>
+#include <Utils/CustomElements.h>
 #include <Utils/NonBlockingDialogs.h>
 
 #include <QJSEngine>
@@ -21,7 +22,7 @@ QAction* AxActionWrapper::action() const { return this->pAction; }
 void AxActionWrapper::setContext(QVariantList context)
 {
     disconnect(pAction, nullptr, this, nullptr);
-    connect(pAction, &QAction::triggered, this, [this, context]() { triggerWithContext(context); });
+    connect(pAction, &QAction::triggered, this, [this, context]() { triggerWithContext(context); }, Qt::QueuedConnection);
 }
 
 void AxActionWrapper::triggerWithContext(const QVariantList& arg) const
@@ -330,11 +331,21 @@ void AxTabWrapper::addTab(QObject* wrapper, const QString &title) const
 
 /// TABLE
 
-AxTableWidgetWrapper::AxTableWidgetWrapper(const QJSValue &headers, QTableWidget* tableWidget, QJSEngine* jsEngine, QObject* parent) : QObject(parent), table(tableWidget), engine(jsEngine) {
-    connect(table, &QTableWidget::cellChanged,       this, &AxTableWidgetWrapper::cellChanged);
-    connect(table, &QTableWidget::cellClicked,       this, &AxTableWidgetWrapper::cellClicked);
-    connect(table, &QTableWidget::cellDoubleClicked, this, &AxTableWidgetWrapper::cellDoubleClicked);
+AxTableWidgetWrapper::AxTableWidgetWrapper(const QJSValue &headers, QTableView* tableView, QJSEngine* jsEngine, QObject* parent) : QObject(parent), table(tableView), engine(jsEngine) {
+    model = new QStandardItemModel(this);
+    table->setModel(model);
 
+    connect(model, &QStandardItemModel::itemChanged, this, [this](QStandardItem* item) {
+        Q_EMIT cellChanged(item->row(), item->column());
+    });
+    connect(table, &QTableView::clicked, this, [this](const QModelIndex &index) {
+        Q_EMIT cellClicked(index.row(), index.column());
+    });
+    connect(table, &QTableView::doubleClicked, this, [this](const QModelIndex &index) {
+        Q_EMIT cellDoubleClicked(index.row(), index.column());
+    });
+
+    table->setHorizontalHeader(new BoldHeaderView(Qt::Horizontal, table));
     table->setAlternatingRowColors( true );
     table->setAutoFillBackground( false );
     table->setShowGrid( false );
@@ -347,19 +358,20 @@ AxTableWidgetWrapper::AxTableWidgetWrapper(const QJSValue &headers, QTableWidget
     table->horizontalHeader()->setCascadingSectionResizes( true );
     table->horizontalHeader()->setHighlightSections( false );
     table->verticalHeader()->setVisible( false );
+    table->setItemDelegate(new PaddingDelegate(table));
 
     this->setColumns(headers);
 }
 
-QTableWidget* AxTableWidgetWrapper::widget() const { return table; }
+QTableView* AxTableWidgetWrapper::widget() const { return table; }
 
 QVariant AxTableWidgetWrapper::jsonMarshal() const
 {
     QJsonArray rowsArray;
-    for (int row = 0; row < table->rowCount(); ++row) {
+    for (int row = 0; row < model->rowCount(); ++row) {
         QJsonArray rowArray;
-        for (int col = 0; col < table->columnCount(); ++col) {
-            auto item = table->item(row, col);
+        for (int col = 0; col < model->columnCount(); ++col) {
+            auto item = model->item(row, col);
             rowArray.append(item ? item->text() : QString());
         }
         rowsArray.append(rowArray);
@@ -370,18 +382,18 @@ QVariant AxTableWidgetWrapper::jsonMarshal() const
 void AxTableWidgetWrapper::jsonUnmarshal(const QVariant& value)
 {
     QJsonArray rowsArray = QJsonDocument::fromJson(value.toByteArray()).array();
-    table->setRowCount(rowsArray.size());
+    model->setRowCount(rowsArray.size());
 
     for (int row = 0; row < rowsArray.size(); ++row) {
         QJsonArray rowArray = rowsArray[row].toArray();
-        if (table->columnCount() < rowArray.size())
-            table->setColumnCount(rowArray.size());
+        if (model->columnCount() < rowArray.size())
+            model->setColumnCount(rowArray.size());
 
         for (int col = 0; col < rowArray.size(); ++col) {
-            QTableWidgetItem* item = table->item(row, col);
+            QStandardItem* item = model->item(row, col);
             if (!item) {
-                item = new QTableWidgetItem();
-                table->setItem(row, col, item);
+                item = new QStandardItem();
+                model->setItem(row, col, item);
             }
             item->setText(rowArray[col].toString());
         }
@@ -390,9 +402,9 @@ void AxTableWidgetWrapper::jsonUnmarshal(const QVariant& value)
 
 void AxTableWidgetWrapper::addColumn(const QString &header) const
 {
-    int column = table->columnCount()+1;
-    table->setColumnCount(column);
-    table->setHorizontalHeaderItem(column-1, new QTableWidgetItem(header));
+    int column = model->columnCount()+1;
+    model->setColumnCount(column);
+    model->setHorizontalHeaderItem(column-1, new QStandardItem(header));
 }
 
 void AxTableWidgetWrapper::setColumns(const QJSValue &headers) const
@@ -402,11 +414,11 @@ void AxTableWidgetWrapper::setColumns(const QJSValue &headers) const
 
     const int length = headers.property("length").toInt();
 
-    table->setColumnCount(length);
+    model->setColumnCount(length);
 
     for (int i = 0; i < length; ++i) {
         QJSValue val = headers.property(i);
-        table->setHorizontalHeaderItem(i, new QTableWidgetItem(val.toString()));
+        model->setHorizontalHeaderItem(i, new QStandardItem(val.toString()));
     }
 }
 
@@ -415,50 +427,50 @@ void AxTableWidgetWrapper::addItem(const QJSValue &items) const
     if (!items.isArray())
         return;
 
-    if( table->rowCount() < 1 )
-        table->setRowCount( 1 );
+    if( model->rowCount() < 1 )
+        model->setRowCount( 1 );
     else
-        table->setRowCount( table->rowCount() + 1 );
+        model->setRowCount( model->rowCount() + 1 );
 
 
     bool isSortingEnabled = table->isSortingEnabled();
     table->setSortingEnabled( false );
 
     const int length = items.property("length").toInt();
-    for (int i = 0; i < table->columnCount(); i++ ) {
+    for (int i = 0; i < model->columnCount(); i++ ) {
         QString text = "";
         if (i < length)
             text = items.property(i).toString();
-        table->setItem( table->rowCount() - 1, i, new QTableWidgetItem(text) );
+        model->setItem( model->rowCount() - 1, i, new QStandardItem(text) );
     }
     table->setSortingEnabled( isSortingEnabled );
 }
 
-int AxTableWidgetWrapper::rowCount() const { return table->rowCount(); }
+int AxTableWidgetWrapper::rowCount() const { return model->rowCount(); }
 
-int AxTableWidgetWrapper::columnCount() const { return table->columnCount(); }
+int AxTableWidgetWrapper::columnCount() const { return model->columnCount(); }
 
-void AxTableWidgetWrapper::setRowCount(const int rows) { table->setRowCount(rows); }
+void AxTableWidgetWrapper::setRowCount(const int rows) { model->setRowCount(rows); }
 
-void AxTableWidgetWrapper::setColumnCount(const int cols) { table->setColumnCount(cols); }
+void AxTableWidgetWrapper::setColumnCount(const int cols) { model->setColumnCount(cols); }
 
-int AxTableWidgetWrapper::currentRow() const { return table->currentRow(); }
+int AxTableWidgetWrapper::currentRow() const { return table->currentIndex().row(); }
 
-int AxTableWidgetWrapper::currentColumn() const { return table->currentColumn(); }
+int AxTableWidgetWrapper::currentColumn() const { return table->currentIndex().column(); }
 
 void AxTableWidgetWrapper::setSortingEnabled(const bool enable) { table->setSortingEnabled(enable); }
 
 void AxTableWidgetWrapper::resizeToContent(const int column) { table->horizontalHeader()->setSectionResizeMode(column, QHeaderView::ResizeToContents); }
 
-QString AxTableWidgetWrapper::text(const int row, const int column) const { return table->item(row, column)->text(); }
+QString AxTableWidgetWrapper::text(const int row, const int column) const { return model->item(row, column)->text(); }
 
-void AxTableWidgetWrapper::setText(const int row, const int column, const QString &text) const { table->item(row, column)->setText(text); }
+void AxTableWidgetWrapper::setText(const int row, const int column, const QString &text) const { model->item(row, column)->setText(text); }
 
 void AxTableWidgetWrapper::setReadOnly(const bool read)
 {
-    for(int rowIndex = 0; rowIndex < table->rowCount(); rowIndex++) {
-        for(int columnIndex = 0; columnIndex < table->columnCount(); columnIndex++) {
-            auto item = table->item(rowIndex, columnIndex);
+    for(int rowIndex = 0; rowIndex < model->rowCount(); rowIndex++) {
+        for(int columnIndex = 0; columnIndex < model->columnCount(); columnIndex++) {
+            auto item = model->item(rowIndex, columnIndex);
             if (item) {
                 if (read)
                     item->setFlags(item->flags() & ~Qt::ItemIsEditable);
@@ -481,26 +493,22 @@ void AxTableWidgetWrapper::setColumnAlign(const int column, const QString &align
     else if (align == "right")
         iAlign = Qt::AlignRight | Qt::AlignVCenter;
 
-    for(int rowIndex = 0; rowIndex < table->rowCount(); rowIndex++) {
-        table->item(rowIndex, column)->setTextAlignment(static_cast<Qt::AlignmentFlag>(iAlign));
+    for(int rowIndex = 0; rowIndex < model->rowCount(); rowIndex++) {
+        model->item(rowIndex, column)->setTextAlignment(static_cast<Qt::AlignmentFlag>(iAlign));
     }
 }
 
 void AxTableWidgetWrapper::clear()
 {
     QSignalBlocker blocker(table->selectionModel());
-    for (int row = table->rowCount() - 1; row >= 0; row--) {
-        for (int col = 0; col < table->columnCount(); ++col)
-            table->takeItem(row, col);
-        table->removeRow(row);
-    }
+    model->removeRows(0, model->rowCount());
 }
 
 QJSValue AxTableWidgetWrapper::selectedRows()
 {
     QSet<int> rowSet;
-    for( int rowIndex = 0 ; rowIndex < table->rowCount() ; rowIndex++ ) {
-        if ( table->item(rowIndex, 0)->isSelected() )
+    for( int rowIndex = 0 ; rowIndex < model->rowCount() ; rowIndex++ ) {
+        if ( table->selectionModel()->isSelected(model->index(rowIndex, 0)) )
             rowSet.insert(rowIndex);
     }
 
@@ -514,18 +522,44 @@ QJSValue AxTableWidgetWrapper::selectedRows()
 
 /// LIST
 
-AxListWidgetWrapper::AxListWidgetWrapper(QListWidget* widget, QJSEngine* engine, QObject* parent) : QObject(parent), list(widget), engine(engine)
+class CompactListDelegate : public QStyledItemDelegate {
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    QWidget* createEditor(QWidget* parent, const QStyleOptionViewItem& option, const QModelIndex& index) const override {
+        QLineEdit* editor = new QLineEdit(parent);
+        editor->setContentsMargins(0, 0, 0, 0);
+        return editor;
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override {
+        return QStyledItemDelegate::sizeHint(option, index);
+    }
+};
+
+AxListWidgetWrapper::AxListWidgetWrapper(QWidget* container, QListWidget* widget, QPushButton* btnAdd, QPushButton* btnRemove, QJSEngine* engine, QObject* parent)
+    : QObject(parent), container(container), list(widget), btnAdd(btnAdd), btnRemove(btnRemove), engine(engine)
 {
+    list->setObjectName("AxCompactList");
     list->setAlternatingRowColors(true);
     list->setSelectionMode(QAbstractItemView::ExtendedSelection);
     list->setEditTriggers(QAbstractItemView::DoubleClicked);
 
-    list->setItemDelegate(new ListDelegate(list));
+    list->setItemDelegate(new CompactListDelegate(list));
+    list->setSpacing(0);
+
+    list->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(list, &QWidget::customContextMenuRequested, this, &AxListWidgetWrapper::showContextMenu);
 
     connect(list, &QListWidget::currentTextChanged, this, &AxListWidgetWrapper::currentTextChanged);
     connect(list, &QListWidget::currentRowChanged,  this, &AxListWidgetWrapper::currentRowChanged);
     connect(list, &QListWidget::itemClicked,        this, [this](const QListWidgetItem* item) { if (item) Q_EMIT itemClickedText(item->text()); });
     connect(list, &QListWidget::itemDoubleClicked,  this, [this](const QListWidgetItem* item) { if (item) Q_EMIT itemDoubleClickedText(item->text()); });
+
+    btnAdd->setVisible(false);
+    btnRemove->setVisible(false);
+    connect(btnAdd,    &QPushButton::clicked, this, &AxListWidgetWrapper::onAddClicked);
+    connect(btnRemove, &QPushButton::clicked, this, &AxListWidgetWrapper::onRemoveClicked);
 }
 
 QVariant AxListWidgetWrapper::jsonMarshal() const
@@ -533,7 +567,7 @@ QVariant AxListWidgetWrapper::jsonMarshal() const
     QVariantList listData;
     for (int i = 0; i < list->count(); ++i) {
         QListWidgetItem* item = list->item(i);
-        if (item)
+        if (item && item->text() != "")
             listData << item->text();
     }
     return listData;
@@ -548,7 +582,7 @@ void AxListWidgetWrapper::jsonUnmarshal(const QVariant& value)
     }
 }
 
-QListWidget* AxListWidgetWrapper::widget() const { return list; }
+QWidget* AxListWidgetWrapper::widget() const { return container; }
 
 QJSValue AxListWidgetWrapper::items()
 {
@@ -634,6 +668,63 @@ void AxListWidgetWrapper::setReadOnly(const bool readonly)
     }
 }
 
+void AxListWidgetWrapper::setDragDropEnabled(const bool enabled)
+{
+    if (enabled) {
+        list->setDragDropMode(QAbstractItemView::InternalMove);
+        list->setDefaultDropAction(Qt::MoveAction);
+    } else {
+        list->setDragDropMode(QAbstractItemView::NoDragDrop);
+    }
+}
+
+void AxListWidgetWrapper::setMenuEnabled(const bool enabled)
+{
+    this->menuEnabled = enabled;
+    if (enabled) {
+        list->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(list, &QWidget::customContextMenuRequested, this, &AxListWidgetWrapper::showContextMenu);
+    } else {
+        list->setContextMenuPolicy(Qt::DefaultContextMenu);
+        disconnect(list, &QWidget::customContextMenuRequested, this, &AxListWidgetWrapper::showContextMenu);
+    }
+}
+
+void AxListWidgetWrapper::showContextMenu(const QPoint &pos)
+{
+    QMenu menu(list);
+
+    QAction* addAction = menu.addAction("Add");
+    QAction* removeAction = menu.addAction("Remove");
+
+    QAction* selected = menu.exec(list->viewport()->mapToGlobal(pos));
+    if (selected == addAction) {
+        onAddClicked();
+    } else if (selected == removeAction) {
+        onRemoveClicked();
+    }
+}
+
+void AxListWidgetWrapper::setButtonsEnabled(const bool enabled)
+{
+    btnAdd->setVisible(enabled);
+    btnRemove->setVisible(enabled);
+}
+
+void AxListWidgetWrapper::onAddClicked()
+{
+    addItem("");
+    list->setCurrentRow(list->count() - 1);
+    list->editItem(list->item(list->count() - 1));
+}
+
+void AxListWidgetWrapper::onRemoveClicked()
+{
+    QList<QListWidgetItem*> selectedItems = list->selectedItems();
+    for (QListWidgetItem* item : selectedItems)
+        delete item;
+}
+
 /// BUTTON
 
 AxButtonWrapper::AxButtonWrapper(QPushButton* btn, QObject* parent) : QObject(parent), button(btn) {
@@ -647,9 +738,7 @@ QPushButton* AxButtonWrapper::widget() const { return button; }
 AxGroupBoxWrapper::AxGroupBoxWrapper(const bool checkable, QGroupBox* box, QObject *parent) : QObject(parent), groupBox(box)
 {
     groupBox->setCheckable(checkable);
-
     groupBox->setLayout(new QHBoxLayout());
-    groupBox->setStyleSheet("QGroupBox { border: 1px solid; margin-top: 14px; padding: 0px; } QGroupBox::title { subcontrol-position: top left; }");
     connect(groupBox, &QGroupBox::clicked, this, &AxGroupBoxWrapper::clicked);
 }
 

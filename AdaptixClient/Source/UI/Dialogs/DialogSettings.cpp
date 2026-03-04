@@ -3,9 +3,12 @@
 #include <UI/Widgets/DockWidgetRegister.h>
 #include <MainAdaptix.h>
 #include <Client/Settings.h>
+#include <Client/ConsoleTheme.h>
 #include <Utils/TitleBarStyle.h>
 #include <QShowEvent>
+#include <QFileDialog>
 #include <algorithm>
+#include <oclero/qlementine.hpp>
 
 DialogSettings::DialogSettings(Settings* s)
 {
@@ -20,17 +23,20 @@ DialogSettings::DialogSettings(Settings* s)
     connect(sessionsOffsetSpin, &QSpinBox::valueChanged,        buttonApply, [this](int){buttonApply->setEnabled(true);} );
     connect(terminalSizeSpin,   &QSpinBox::valueChanged,        buttonApply, [this](int){buttonApply->setEnabled(true);} );
     connect(consoleSizeSpin,    &QSpinBox::valueChanged,        buttonApply, [this](int){buttonApply->setEnabled(true);} );
+    connect(consoleThemeCombo, &QComboBox::currentTextChanged, buttonApply, [this](const QString &){buttonApply->setEnabled(true);} );
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
-    connect(consoleTimeCheckbox,       &QCheckBox::checkStateChanged, buttonApply, [this](int){buttonApply->setEnabled(true);} );
-    connect(consoleNoWrapCheckbox,     &QCheckBox::checkStateChanged, buttonApply, [this](int){buttonApply->setEnabled(true);} );
-    connect(consoleAutoScrollCheckbox, &QCheckBox::checkStateChanged, buttonApply, [this](int){buttonApply->setEnabled(true);} );
-    connect(sessionsHealthCheck,       &QCheckBox::checkStateChanged, this, &DialogSettings::onHealthChange );
+    connect(consoleTimeCheckbox,           &QCheckBox::checkStateChanged, buttonApply, [this](int){buttonApply->setEnabled(true);} );
+    connect(consoleNoWrapCheckbox,         &QCheckBox::checkStateChanged, buttonApply, [this](int){buttonApply->setEnabled(true);} );
+    connect(consoleAutoScrollCheckbox,     &QCheckBox::checkStateChanged, buttonApply, [this](int){buttonApply->setEnabled(true);} );
+    connect(consoleShowBackgroundCheckbox, &QCheckBox::checkStateChanged, buttonApply, [this](int){buttonApply->setEnabled(true);} );
+    connect(sessionsHealthCheck,           &QCheckBox::checkStateChanged, this, &DialogSettings::onHealthChange );
 #else
-    connect(consoleTimeCheckbox,       &QCheckBox::stateChanged, buttonApply, [this](int){buttonApply->setEnabled(true);} );
-    connect(consoleNoWrapCheckbox,     &QCheckBox::stateChanged, buttonApply, [this](int){buttonApply->setEnabled(true);} );
-    connect(consoleAutoScrollCheckbox, &QCheckBox::stateChanged, buttonApply, [this](int){buttonApply->setEnabled(true);} );
-    connect(sessionsHealthCheck,       &QCheckBox::stateChanged, this, &DialogSettings::onHealthChange );
+    connect(consoleTimeCheckbox,           &QCheckBox::stateChanged, buttonApply, [this](int){buttonApply->setEnabled(true);} );
+    connect(consoleNoWrapCheckbox,         &QCheckBox::stateChanged, buttonApply, [this](int){buttonApply->setEnabled(true);} );
+    connect(consoleAutoScrollCheckbox,     &QCheckBox::stateChanged, buttonApply, [this](int){buttonApply->setEnabled(true);} );
+    connect(consoleShowBackgroundCheckbox, &QCheckBox::stateChanged, buttonApply, [this](int){buttonApply->setEnabled(true);} );
+    connect(sessionsHealthCheck,           &QCheckBox::stateChanged, this, &DialogSettings::onHealthChange );
 #endif
 
     for ( int i = 0; i < sessionsCheckCount; i++) {
@@ -81,16 +87,19 @@ void DialogSettings::createUI()
 
     themeLabel = new QLabel("Main theme: ", mainSettingWidget);
     themeCombo = new QComboBox(mainSettingWidget);
-    themeCombo->addItem("Adaptix_Dark");
-    themeCombo->addItem("Adaptix_Light");
-    themeCombo->addItem("Adaptix_Dracula");
-    themeCombo->addItem("Dark_Ice");
-    themeCombo->addItem("Glass_Morph");
-    themeCombo->addItem("Hacker_Tech");
-    themeCombo->addItem("Dark_Old");
-    themeCombo->addItem("Dracula_Old");
-    themeCombo->addItem("Fallout");
-    themeCombo->addItem("Light_Arc");
+    refreshAppThemeCombo();
+    themeImportBtn = new QPushButton("Import", mainSettingWidget);
+    themeImportBtn->setFixedWidth(80);
+    connect(themeImportBtn, &QPushButton::clicked, this, [this]() {
+        QString filePath = QFileDialog::getOpenFileName(this, "Import Application Theme", QString(), "JSON files (*.json)");
+        if (filePath.isEmpty()) return;
+        if (importAppTheme(filePath)) {
+            QString name = QFileInfo(filePath).baseName();
+            refreshAppThemeCombo();
+            themeCombo->setCurrentText(name);
+            buttonApply->setEnabled(true);
+        }
+    });
 
     fontSizeLabel = new QLabel("Font size: ", mainSettingWidget);
     fontSizeSpin  = new QSpinBox(mainSettingWidget);
@@ -99,12 +108,10 @@ void DialogSettings::createUI()
 
     fontFamilyLabel = new QLabel("Font family: ", mainSettingWidget);
     fontFamilyCombo = new QComboBox(mainSettingWidget);
-    fontFamilyCombo->addItem("Adaptix - DejaVu Sans Mono");
-    fontFamilyCombo->addItem("Adaptix - Droid Sans Mono");
-    fontFamilyCombo->addItem("Adaptix - VT323");
+    fontFamilyCombo->addItem("Adaptix - JetBrains Mono");
     fontFamilyCombo->addItem("Adaptix - Hack");
-    fontFamilyCombo->addItem("Adaptix - Anonymous Pro");
-    fontFamilyCombo->addItem("Adaptix - Space Mono");
+    fontFamilyCombo->addItem("Qlementine - Inter");
+    fontFamilyCombo->addItem("Qlementine - Roboto Mono");
 
     graphLabel1 = new QLabel("Session Graph version:", mainSettingWidget);
     graphCombo1 = new QComboBox(mainSettingWidget);
@@ -124,29 +131,51 @@ void DialogSettings::createUI()
     consoleSizeSpin->setMinimum(10000);
     consoleSizeSpin->setMaximum(1000000);
 
-    consoleTimeCheckbox       = new QCheckBox("Print date and time", consoleGroup);
-    consoleNoWrapCheckbox     = new QCheckBox("No Wrap mode", consoleGroup);
-    consoleAutoScrollCheckbox = new QCheckBox("Auto Scroll mode", consoleGroup);
+    consoleTimeCheckbox           = new QCheckBox("Print date and time", consoleGroup);
+    consoleNoWrapCheckbox         = new QCheckBox("No Wrap mode", consoleGroup);
+    consoleAutoScrollCheckbox     = new QCheckBox("Auto Scroll mode", consoleGroup);
+    consoleShowBackgroundCheckbox = new QCheckBox("Show background image", consoleGroup);
+
+    consoleThemeLabel = new QLabel("Console theme:", consoleGroup);
+    consoleThemeCombo = new QComboBox(consoleGroup);
+    refreshConsoleThemeCombo();
+    consoleThemeImportBtn = new QPushButton("Import", consoleGroup);
+    consoleThemeImportBtn->setFixedWidth(80);
+    connect(consoleThemeImportBtn, &QPushButton::clicked, this, [this]() {
+        QString filePath = QFileDialog::getOpenFileName(this, "Import Console Theme", QString(), "JSON files (*.json)");
+        if (filePath.isEmpty()) return;
+        if (ConsoleThemeManager::instance().importTheme(filePath)) {
+            QString name = QFileInfo(filePath).baseName();
+            refreshConsoleThemeCombo();
+            consoleThemeCombo->setCurrentText(name);
+            buttonApply->setEnabled(true);
+        }
+    });
 
     consoleGroupLayout = new QGridLayout(consoleGroup);
-    consoleGroupLayout->addWidget(consoleSizeLabel,          0, 0, 1, 1);
-    consoleGroupLayout->addWidget(consoleSizeSpin,           0, 1, 1, 1);
-    consoleGroupLayout->addWidget(consoleTimeCheckbox,       1, 0, 1, 2);
-    consoleGroupLayout->addWidget(consoleNoWrapCheckbox,     2, 0, 1, 2);
-    consoleGroupLayout->addWidget(consoleAutoScrollCheckbox, 3, 0, 1, 2);
+    consoleGroupLayout->addWidget(consoleSizeLabel,              0, 0, 1, 1);
+    consoleGroupLayout->addWidget(consoleSizeSpin,               0, 1, 1, 2);
+    consoleGroupLayout->addWidget(consoleTimeCheckbox,           1, 0, 1, 3);
+    consoleGroupLayout->addWidget(consoleNoWrapCheckbox,         2, 0, 1, 3);
+    consoleGroupLayout->addWidget(consoleAutoScrollCheckbox,     3, 0, 1, 3);
+    consoleGroupLayout->addWidget(consoleShowBackgroundCheckbox, 4, 0, 1, 3);
+    consoleGroupLayout->addWidget(consoleThemeLabel,             5, 0, 1, 1);
+    consoleGroupLayout->addWidget(consoleThemeCombo,             5, 1, 1, 1);
+    consoleGroupLayout->addWidget(consoleThemeImportBtn,         5, 2, 1, 1);
     consoleGroup->setLayout(consoleGroupLayout);
 
     mainSettingLayout->addWidget(themeLabel,        0, 0, 1, 1);
     mainSettingLayout->addWidget(themeCombo,        0, 1, 1, 1);
+    mainSettingLayout->addWidget(themeImportBtn,    0, 2, 1, 1);
     mainSettingLayout->addWidget(fontFamilyLabel,   1, 0, 1, 1);
-    mainSettingLayout->addWidget(fontFamilyCombo,   1, 1, 1, 1);
+    mainSettingLayout->addWidget(fontFamilyCombo,   1, 1, 1, 2);
     mainSettingLayout->addWidget(fontSizeLabel,     2, 0, 1, 1);
-    mainSettingLayout->addWidget(fontSizeSpin,      2, 1, 1, 1);
+    mainSettingLayout->addWidget(fontSizeSpin,      2, 1, 1, 2);
     mainSettingLayout->addWidget(graphLabel1,       3, 0, 1, 1);
-    mainSettingLayout->addWidget(graphCombo1,       3, 1, 1, 1);
+    mainSettingLayout->addWidget(graphCombo1,       3, 1, 1, 2);
     mainSettingLayout->addWidget(terminalSizeLabel, 4, 0, 1, 1);
-    mainSettingLayout->addWidget(terminalSizeSpin,  4, 1, 1, 1);
-    mainSettingLayout->addWidget(consoleGroup,      5, 0, 1, 2);
+    mainSettingLayout->addWidget(terminalSizeSpin,  4, 1, 1, 2);
+    mainSettingLayout->addWidget(consoleGroup,      5, 0, 1, 3);
 
     mainSettingWidget->setLayout(mainSettingLayout);
 
@@ -288,7 +317,11 @@ void DialogSettings::createUI()
     listSettings->setCurrentRow(0);
 
     labelHeader = new QLabel(this);
-    labelHeader->setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;");
+    QFont headerFont = labelHeader->font();
+    headerFont.setPointSize(14);
+    headerFont.setBold(true);
+    labelHeader->setFont(headerFont);
+    labelHeader->setContentsMargins(0, 0, 0, 10);
     labelHeader->setText("Main settings");
 
     lineFrame = new QFrame(this);
@@ -302,10 +335,9 @@ void DialogSettings::createUI()
 
     hSpacer     = new QSpacerItem(40, 20, QSizePolicy::Expanding, QSizePolicy::Minimum);
     buttonClose = new QPushButton("Close", this);
-    buttonClose->setProperty("ButtonStyle", "dialog");
 
     buttonApply = new QPushButton("Apply ", this);
-    buttonApply->setProperty("ButtonStyle", "dialog");
+    buttonApply->setDefault(true);
     buttonApply->setEnabled(false);
 
     stackSettings = new QStackedWidget(this);
@@ -363,31 +395,28 @@ void DialogSettings::onApply() const
 {
     buttonApply->setEnabled(false);
 
-    if(settings->data.MainTheme != themeCombo->currentText()) {
+    bool themeChanged = settings->data.MainTheme != themeCombo->currentText();
+    bool fontChanged  = settings->data.FontSize != fontSizeSpin->value() || settings->data.FontFamily != fontFamilyCombo->currentText();
+
+    if(themeChanged) {
         settings->data.MainTheme = themeCombo->currentText();
-
-        QString appTheme = ":/themes/" + settings->data.MainTheme;
-        bool result = false;
-        QString style = ReadFileString(appTheme, &result);
-        if (result) {
-            QApplication *app = qobject_cast<QApplication*>(QCoreApplication::instance());
-            app->setStyleSheet(style);
+        
+        if (auto* style = settings->getMainAdaptix()->qlementineStyle) {
+            QString userPath = userAppThemeDir() + "/" + settings->data.MainTheme + ".json";
+            QString themePath = QFile::exists(userPath) ? userPath : QString(":/qlementine-themes/%1").arg(settings->data.MainTheme);
+            style->setThemeJsonPath(themePath);
         }
-
+        
         TitleBarStyle::applyForTheme(settings->getMainAdaptix()->mainUI, settings->data.MainTheme);
     }
 
-    if(settings->data.FontSize != fontSizeSpin->value() || settings->data.FontFamily != fontFamilyCombo->currentText()) {
+    if(fontChanged) {
         settings->data.FontSize   = fontSizeSpin->value();
         settings->data.FontFamily = fontFamilyCombo->currentText();
+    }
 
-        QString appFontFamily = settings->data.FontFamily;
-        if (appFontFamily.startsWith("Adaptix"))
-            appFontFamily = appFontFamily.split("-")[1].trimmed();
-
-        auto appFont = QFont(appFontFamily);
-        appFont.setPointSize(settings->data.FontSize);
-        QApplication::setFont(appFont);
+    if(themeChanged || fontChanged) {
+        settings->getMainAdaptix()->ApplyApplicationFont();
     }
 
     if (settings->data.GraphVersion != graphCombo1->currentText()) {
@@ -401,6 +430,14 @@ void DialogSettings::onApply() const
     settings->data.ConsoleTime = consoleTimeCheckbox->isChecked();
     settings->data.ConsoleNoWrap = consoleNoWrapCheckbox->isChecked();
     settings->data.ConsoleAutoScroll = consoleAutoScrollCheckbox->isChecked();
+
+    bool bgChanged = settings->data.ConsoleShowBackground != consoleShowBackgroundCheckbox->isChecked();
+    settings->data.ConsoleShowBackground = consoleShowBackgroundCheckbox->isChecked();
+
+    if (settings->data.ConsoleTheme != consoleThemeCombo->currentText() || bgChanged) {
+        settings->data.ConsoleTheme = consoleThemeCombo->currentText();
+        ConsoleThemeManager::instance().loadTheme(settings->data.ConsoleTheme);
+    }
 
     bool updateTable = false;
     for ( int i = 0; i < sessionsCheckCount; i++) {
@@ -449,6 +486,8 @@ void DialogSettings::loadSettings()
     consoleTimeCheckbox->setChecked(settings->data.ConsoleTime);
     consoleNoWrapCheckbox->setChecked(settings->data.ConsoleNoWrap);
     consoleAutoScrollCheckbox->setChecked(settings->data.ConsoleAutoScroll);
+    consoleShowBackgroundCheckbox->setChecked(settings->data.ConsoleShowBackground);
+    consoleThemeCombo->setCurrentText(settings->data.ConsoleTheme);
 
     for (int i = 0; i < sessionsCheckCount; i++)
         sessionsCheck[i]->setChecked(settings->data.SessionsTableColumns[i]);
@@ -476,4 +515,57 @@ void DialogSettings::showEvent(QShowEvent* event)
 {
     loadSettings();
     QWidget::showEvent(event);
+}
+
+QString DialogSettings::userAppThemeDir()
+{
+    QString dir = QDir(QDir::homePath()).filePath(".adaptix/themes/app");
+    QDir().mkpath(dir);
+    return dir;
+}
+
+bool DialogSettings::importAppTheme(const QString& filePath)
+{
+    QFileInfo fi(filePath);
+    if (!fi.exists() || fi.suffix().toLower() != "json")
+        return false;
+
+    QString destDir = userAppThemeDir();
+    QString destPath = destDir + "/" + fi.fileName();
+    if (QFile::exists(destPath))
+        QFile::remove(destPath);
+
+    return QFile::copy(filePath, destPath);
+}
+
+void DialogSettings::refreshAppThemeCombo()
+{
+    QString current = themeCombo->currentText();
+    themeCombo->clear();
+
+    QStringList builtIn = {
+        "Adaptix_Dark", "Adaptix_Light", "Adaptix_Dracula",
+        "Dark_Ice", "Glass_Morph", "Hacker_Tech",
+        "Fallout", "Light_Arc", "Dark_Classic", "Dracula"
+    };
+    themeCombo->addItems(builtIn);
+
+    QDir userDir(userAppThemeDir());
+    for (const auto& entry : userDir.entryList({"*.json"}, QDir::Files)) {
+        QString name = QFileInfo(entry).baseName();
+        if (!builtIn.contains(name))
+            themeCombo->addItem(name);
+    }
+
+    if (!current.isEmpty())
+        themeCombo->setCurrentText(current);
+}
+
+void DialogSettings::refreshConsoleThemeCombo()
+{
+    QString current = consoleThemeCombo->currentText();
+    consoleThemeCombo->clear();
+    consoleThemeCombo->addItems(ConsoleThemeManager::instance().availableThemes());
+    if (!current.isEmpty())
+        consoleThemeCombo->setCurrentText(current);
 }

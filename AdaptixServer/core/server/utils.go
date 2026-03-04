@@ -1,12 +1,14 @@
 package server
 
 import (
+	"AdaptixServer/core/axscript"
 	"AdaptixServer/core/connector"
 	"AdaptixServer/core/database"
 	"AdaptixServer/core/eventing"
 	"AdaptixServer/core/extender"
 	"AdaptixServer/core/profile"
 	"AdaptixServer/core/utils/safe"
+	"AdaptixServer/core/utils/token"
 	"io"
 	"net"
 	"sync"
@@ -42,6 +44,7 @@ type Teamserver struct {
 	Broker        *MessageBroker
 	TunnelManager *TunnelManager
 	EventManager  *eventing.EventManager
+	ScriptManager *axscript.ScriptManager
 
 	listener_configs safe.Map // listenerFullName string : listenerInfo extender.ListenerInfo
 	agent_configs    safe.Map // agentName string        : agentInfo extender.AgentInfo
@@ -53,16 +56,12 @@ type Teamserver struct {
 	notifications *safe.Slice // 			       : sync_packet interface{}
 	Agents        safe.Map    // agentId string      : agent *Agent
 	listeners     safe.Map    // listenerName string : listenerData ListenerData
-	messages      *safe.Slice //                     : chatData ChatData
-	downloads     safe.Map    // fileId string       : downloadData DownloadData
+	downloads     safe.Map    // fileId string       : downloadData DownloadData (only active)
 	tmp_uploads   safe.Map    // fileId string       : uploadData UploadData
-	screenshots   safe.Map    // screeId string      : screenData ScreenDataData
-	credentials   *safe.Slice
-	targets       *safe.Slice
 	terminals     safe.Map    // terminalId string   : terminal Terminal
 	pivots        *safe.Slice // 			           : PivotData
-	otps          safe.Map    // otp string		   : Id string
-	builders      safe.Map    // buildId string      : build Build
+	OTPManager    *token.OTPManager
+	builders      safe.Map // buildId string      : build Build
 }
 
 type Agent struct {
@@ -72,15 +71,12 @@ type Agent struct {
 	Tick     bool
 	Active   bool
 
-	OutConsole *safe.Slice //  sync_packet interface{}
-
 	HostedTasks       *safe.Queue // taskData TaskData
 	HostedTunnelTasks *safe.Queue // taskData TaskData
 	HostedTunnelData  *safe.Queue // taskData TaskDataTunnel
 
-	RunningTasks   safe.Map // taskId string, taskData TaskData
-	RunningJobs    safe.Map // taskId string, list []TaskData
-	CompletedTasks safe.Map // taskId string, taskData TaskData
+	RunningTasks safe.Map // taskId string, taskData TaskData
+	RunningJobs  safe.Map // taskId string, list []TaskData
 
 	PivotParent *adaptix.PivotData
 	PivotChilds *safe.Slice
@@ -277,10 +273,11 @@ type SyncPackerListenerStop struct {
 type SyncPackerAgentReg struct {
 	SpType int `json:"type"`
 
-	Agent          string   `json:"agent"`
-	AX             string   `json:"ax"`
-	Listeners      []string `json:"listeners"`
-	MultiListeners bool     `json:"multi_listeners"`
+	Agent          string           `json:"agent"`
+	AX             string           `json:"ax"`
+	Listeners      []string         `json:"listeners"`
+	MultiListeners bool             `json:"multi_listeners"`
+	Groups         []AxCommandBatch `json:"groups"`
 }
 
 /// SERVICE
@@ -527,7 +524,7 @@ type SyncPackerDownloadCreate struct {
 	User      string `json:"d_user"`
 	Computer  string `json:"d_computer"`
 	File      string `json:"d_file"`
-	Size      int    `json:"d_size"`
+	Size      int64  `json:"d_size"`
 	Date      int64  `json:"d_date"`
 }
 
@@ -535,7 +532,7 @@ type SyncPackerDownloadUpdate struct {
 	SpType int `json:"type"`
 
 	FileId   string `json:"d_file_id"`
-	RecvSize int    `json:"d_recv_size"`
+	RecvSize int64  `json:"d_recv_size"`
 	State    int    `json:"d_state"`
 }
 
@@ -554,9 +551,9 @@ type SyncPackerDownloadActual struct {
 	User      string `json:"d_user"`
 	Computer  string `json:"d_computer"`
 	File      string `json:"d_file"`
-	Size      int    `json:"d_size"`
+	Size      int64  `json:"d_size"`
 	Date      int64  `json:"d_date"`
-	RecvSize  int    `json:"d_recv_size"`
+	RecvSize  int64  `json:"d_recv_size"`
 	State     int    `json:"d_state"`
 }
 
@@ -756,4 +753,18 @@ type SyncPackerTunnelDelete struct {
 	SpType int `json:"type"`
 
 	TunnelId string `json:"p_tunnel_id"`
+}
+
+type SyncPackerAxScriptData struct {
+	SpType  int              `json:"type"`
+	Name    string           `json:"name"`
+	Content string           `json:"content"`
+	Groups  []AxCommandBatch `json:"groups"`
+}
+
+type AxCommandBatch struct {
+	Agent    string `json:"agent"`
+	Listener string `json:"listener"`
+	Os       int    `json:"os"`
+	Commands string `json:"commands"`
 }

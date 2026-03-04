@@ -128,6 +128,7 @@ function RegisterCommands(listenerType)
     cmd_download.addArgString("file", true);
 
     let _cmd_execute_bof = ax.create_command("bof", "Execute Beacon Object File", "execute bof /home/user/whoami.o", "Task: execute BOF");
+    _cmd_execute_bof.addArgBool("-a", "Async mode");
     _cmd_execute_bof.addArgFile("bof", true, "Path to object file");
     _cmd_execute_bof.addArgString("param_data", false);
     let cmd_execute = ax.create_command("execute", "Execute [bof] in the current process's memory");
@@ -194,6 +195,7 @@ function RegisterCommands(listenerType)
     let _cmd_ps_run = ax.create_command("run", "Run a program", "run -s cmd.exe /c whoami /all", "Task: create new process");
     _cmd_ps_run.addArgBool("-s", "Suspend process");
     _cmd_ps_run.addArgBool("-o", "Output to console");
+    _cmd_ps_run.addArgBool("-i", "Use impersonation");
     _cmd_ps_run.addArgString("args", true);
     let cmd_ps = ax.create_command("ps", "Process manager");
     cmd_ps.addSubCommands([_cmd_ps_list, _cmd_ps_kill, _cmd_ps_run]);
@@ -338,6 +340,11 @@ function GenerateUI(listeners_type)
     let sideloadingSelector = form.create_selector_file();
     sideloadingSelector.setVisible(false);
 
+    let checkIatHiding = form.create_check("IAT Hiding (empty import table)");
+    // if( !listeners_type.includes("BeaconHTTP") && !listeners_type.includes("BeaconDNS") ) {
+    //     checkIatHiding.setVisible(false);
+    // }
+
     //////////////////// DNS Settings
 
     let labelDnsMode = form.create_label("DNS Mode:");
@@ -440,6 +447,10 @@ function GenerateUI(listeners_type)
 
     /////////////////////////
 
+    let labelRotation = form.create_label("Rotation Mode:");
+    let comboRotation = form.create_combo();
+    comboRotation.addItems(["sequential", "random"]);
+
     let spacer2 = form.create_vspacer();
 
     if(!listeners_type.includes("BeaconDNS")) {
@@ -447,14 +458,16 @@ function GenerateUI(listeners_type)
     }
     if(!listeners_type.includes("BeaconHTTP")) {
         group_proxy.setVisible(false);
+        labelRotation.setVisible(false);
+        comboRotation.setVisible(false);
     }
 
     let layout = form.create_gridlayout();
     layout.addWidget(spacer1,             0, 0, 1, 3);
     layout.addWidget(labelArch,           1, 0, 1, 1);
     layout.addWidget(comboArch,           1, 1, 1, 2);
-    layout.addWidget(labelAgentFormat,         2, 0, 1, 1);
-    layout.addWidget(comboAgentFormat,         2, 1, 1, 2);
+    layout.addWidget(labelAgentFormat,    2, 0, 1, 1);
+    layout.addWidget(comboAgentFormat,    2, 1, 1, 2);
     layout.addWidget(labelSleep,          3, 0, 1, 1);
     layout.addWidget(textSleep,           3, 1, 1, 1);
     layout.addWidget(spinJitter,          3, 2, 1, 1);
@@ -468,9 +481,12 @@ function GenerateUI(listeners_type)
     layout.addWidget(textSvcName,         6, 1, 1, 2);
     layout.addWidget(checkSideloading,    7, 0, 1, 1);
     layout.addWidget(sideloadingSelector, 7, 1, 1, 2);
-    layout.addWidget(group_proxy,         8, 0, 1, 3);
-    layout.addWidget(group_dns,           9, 0, 1, 3);
-    layout.addWidget(spacer2,            10, 0, 1, 3);
+    layout.addWidget(labelRotation,       8, 0, 1, 1);
+    layout.addWidget(comboRotation,       8, 1, 1, 2);
+    layout.addWidget(checkIatHiding,      9, 0, 1, 3);
+    layout.addWidget(group_proxy,        10, 0, 1, 3);
+    layout.addWidget(group_dns,          12, 0, 1, 3);
+    layout.addWidget(spacer2,            12, 0, 1, 3);
 
     form.connect(comboAgentFormat, "currentTextChanged", function(text) {
         if(text == "Service Exe") {
@@ -507,12 +523,14 @@ function GenerateUI(listeners_type)
     container.put("svcname",             textSvcName)
     container.put("is_sideloading",      checkSideloading)
     container.put("sideloading_content", sideloadingSelector)
+    container.put("iat_hiding",          checkIatHiding)
     container.put("use_proxy",           group_proxy)
     container.put("proxy_type",          comboProxyType)
     container.put("proxy_host",          textProxyServer)
     container.put("proxy_port",          spinProxyPort)
     container.put("proxy_username",      textProxyUsername)
     container.put("proxy_password",      textProxyPassword)
+    container.put("rotation_mode",       comboRotation)
 
     let panel = form.create_panel()
     panel.setLayout(layout)

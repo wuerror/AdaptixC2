@@ -142,6 +142,7 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />
   </ImportGroup>
   <ImportGroup Label="Shared">
   </ImportGroup>
@@ -471,6 +472,7 @@
     <ClCompile Include="ApiLoader.cpp" />
     <ClCompile Include="beacon_functions.cpp" />
     <ClCompile Include="Boffer.cpp" />
+    <ClCompile Include="bof_loader.cpp" />
     <ClCompile Include="Commander.cpp" />
     <ClCompile Include="config.cpp" />
     <ClCompile Include="ConnectorDNS.cpp" />
@@ -503,8 +505,10 @@
     <ClInclude Include="ApiLoader.h" />
     <ClInclude Include="beacon.h" />
     <ClInclude Include="Boffer.h" />
+    <ClInclude Include="bof_loader.h" />
     <ClInclude Include="Commander.h" />
     <ClInclude Include="config.h" />
+    <ClInclude Include="Connector.h" />
     <ClInclude Include="ConnectorDNS.h" />
     <ClInclude Include="ConnectorHTTP.h" />
     <ClInclude Include="ConnectorSMB.h" />
@@ -528,5 +532,11 @@
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />
   </ImportGroup>
+  <ItemGroup>
+    <MASM Include="chkstk_x64.asm">
+      <ExcludedFromBuild Condition="'$(Platform)'=='Win32'">true</ExcludedFromBuild>
+    </MASM>
+  </ItemGroup>
 </Project>

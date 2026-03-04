@@ -10,7 +10,8 @@
 #include <QDialog>
 #include <QLabel>
 #include <QLineEdit>
-#include <QTableWidget>
+#include <QTableView>
+#include <QStandardItemModel>
 #include <QPushButton>
 #include <QMenu>
 #include <QRegularExpression>
@@ -67,8 +68,8 @@
 #include <Utils/FileSystem.h>
 #include <Utils/Convert.h>
 
-#define FRAMEWORK_VERSION "Adaptix Framework v1.1"
-#define SMALL_VERSION     "v1.1"
+#define FRAMEWORK_VERSION "Adaptix Framework v1.2"
+#define SMALL_VERSION     "v1.2"
 
 ///////////
 
@@ -97,21 +98,21 @@
 #define TYPE_SYNC_CATEGORY_BATCH 0x15
 
 #define TYPE_CHAT_MESSAGE 0x18
+#define TYPE_SERVICE_DATA 0x19
 
-#define TYPE_SERVICE_REG  0x21
-#define TYPE_SERVICE_DATA 0x22
+#define TYPE_REG_LISTENER 0x21
+#define TYPE_REG_AGENT    0x22
+#define TYPE_REG_SERVICE  0x23
 
-#define TYPE_LISTENER_REG   0x31
-#define TYPE_LISTENER_START 0x32
+#define TYPE_LISTENER_START 0x31
+#define TYPE_LISTENER_EDIT  0x32
 #define TYPE_LISTENER_STOP  0x33
-#define TYPE_LISTENER_EDIT  0x34
 
-#define TYPE_AGENT_REG         0x41
-#define TYPE_AGENT_NEW         0x42
-#define TYPE_AGENT_TICK        0x43
-#define TYPE_AGENT_UPDATE      0x44
-#define TYPE_AGENT_LINK        0x45
-#define TYPE_AGENT_REMOVE      0x46
+#define TYPE_AGENT_NEW    0x41
+#define TYPE_AGENT_UPDATE 0x42
+#define TYPE_AGENT_REMOVE 0x43
+#define TYPE_AGENT_TICK   0x44
+#define TYPE_AGENT_LINK   0x45
 
 #define TYPE_AGENT_TASK_SYNC   0x49
 #define TYPE_AGENT_TASK_UPDATE 0x4a
@@ -155,6 +156,8 @@
 #define TYPE_TARGETS_EDIT    0x88
 #define TYPE_TARGETS_DELETE  0x89
 #define TYPE_TARGETS_SET_TAG 0x8a
+
+#define TYPE_AXSCRIPT_COMMANDS 0x91
 
 //////////
 
@@ -200,6 +203,8 @@ typedef struct SettingsData {
     int  ConsoleBufferSize;
     bool ConsoleNoWrap;
     bool ConsoleAutoScroll;
+    bool ConsoleShowBackground;
+    QString ConsoleTheme;
 
     bool   SessionsTableColumns[16];
     int    SessionsColumnOrder[16];
@@ -280,8 +285,8 @@ typedef struct DownloadData
     QString User;
     QString Computer;
     QString Filename;
-    int     TotalSize;
-    int     RecvSize;
+    qint64  TotalSize;
+    qint64  RecvSize;
     int     State;
     QString Date;
     qint64  DateTimestamp = 0;

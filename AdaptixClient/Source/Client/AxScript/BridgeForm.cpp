@@ -214,15 +214,32 @@ QObject* BridgeForm::create_textmulti(const QString& text)
 
 QObject* BridgeForm::create_list()
 {
-    auto* list = new QListWidget(getParentWidget());
-    auto* wrapper = new AxListWidgetWrapper(list, scriptEngine->engine(), this);
+    auto* container = new QWidget(getParentWidget());
+    auto* list = new QListWidget();
+    auto* btnAdd = new QPushButton("+");
+    auto* btnRemove = new QPushButton("-");
+
+    auto* btnLayout = new QVBoxLayout();
+    btnLayout->setContentsMargins(0, 0, 0, 0);
+    btnLayout->setSpacing(2);
+    btnLayout->addWidget(btnAdd);
+    btnLayout->addWidget(btnRemove);
+    btnLayout->addStretch();
+
+    auto* mainLayout = new QHBoxLayout(container);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(4);
+    mainLayout->addWidget(list);
+    mainLayout->addLayout(btnLayout);
+
+    auto* wrapper = new AxListWidgetWrapper(container, list, btnAdd, btnRemove, scriptEngine->engine(), this);
     scriptEngine->registerObject(wrapper);
     return wrapper;
 }
 
 QObject* BridgeForm::create_table(const QJSValue &headers)
 {
-    auto* table = new QTableWidget(getParentWidget());
+    auto* table = new QTableView(getParentWidget());
     auto* wrapper = new AxTableWidgetWrapper(headers, table, scriptEngine->engine(), this);
     scriptEngine->registerObject(wrapper);
     return wrapper;

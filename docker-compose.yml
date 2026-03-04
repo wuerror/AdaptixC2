@@ -1,6 +1,19 @@
 name: AdaptixC2
 
 services:
+  # Build Qt client
+  client-builder:
+    profiles:
+      - build-client
+    build:
+      context: .
+      network: host
+      target: build-client
+    container_name: adaptix-client-builder
+    volumes:
+      - ./AdaptixClient/client-dist:/client-dist-output/
+    command: sh -c "cp -r /client-dist/* /client-dist-output/"
+
   # Build server only
   server-builder:
     profiles:

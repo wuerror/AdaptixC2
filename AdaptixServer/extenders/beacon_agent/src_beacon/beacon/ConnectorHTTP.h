@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <wininet.h>
+#include "Connector.h"
 
 #ifndef PROFILE_STRUCT
 #define PROFILE_STRUCT
@@ -16,12 +17,17 @@ typedef struct {
 	WORD*  ports;
 	BOOL   use_ssl;
 	BYTE*  http_method;
-	BYTE*  uri;
+	ULONG  uri_count;
+	BYTE** uris;
 	BYTE*  parameter;
-	BYTE*  user_agent;
+	ULONG  ua_count;
+	BYTE** user_agents;
 	BYTE*  http_headers;
 	ULONG  ans_pre_size;
 	ULONG  ans_size;
+	ULONG  hh_count;
+	BYTE** host_headers;
+	BYTE   rotation_mode;   // 0=sequential, 1=random
 	BYTE   proxy_type;      // 0=none, 1=http, 2=https
 	BYTE*  proxy_host;
 	WORD   proxy_port;
@@ -61,19 +67,26 @@ struct HTTPFUNC {
 	DECL_API(InternetReadFile);
 };
 
-class ConnectorHTTP
+class ConnectorHTTP : public Connector
 {
-	CHAR*  user_agent     = NULL;
-	CHAR*  host_header	  = NULL;
-	BOOL   ssl			  = FALSE;
+	ULONG  ua_count       = 0;
+	CHAR** user_agents    = NULL;
+	ULONG  ua_index       = 0;
+	ULONG  hh_count       = 0;
+	CHAR** host_headers   = NULL;
+	ULONG  hh_index       = 0;
+	BOOL   ssl            = FALSE;
 	CHAR*  http_method    = NULL;
 	ULONG  server_count   = 0;
 	CHAR** server_address = NULL;
 	WORD*  server_ports   = 0;
-	CHAR*  uri            = NULL;
+	ULONG  uri_count      = 0;
+	CHAR** uris           = NULL;
+	ULONG  uri_index      = 0;
 	CHAR*  headers        = NULL;
 	ULONG  ans_size       = 0;
 	ULONG  ans_pre_size   = 0;
+	BYTE   rotation_mode  = 0;
 
 	BYTE* recvData = NULL;
 	int   recvSize = 0;
@@ -93,14 +106,17 @@ class ConnectorHTTP
 public:
 	ConnectorHTTP();
 
-	BOOL SetConfig(ProfileHTTP profile, BYTE* beat, ULONG beatSize);
-	void CloseConnector();
+	BOOL SetProfile(void* profile, BYTE* beat, ULONG beatSize) override;
+	void Exchange(BYTE* plainData, ULONG plainSize, BYTE* sessionKey) override;
+	void CloseConnector() override;
 
-	void  SendData(BYTE* data, ULONG data_size);
-	BYTE* RecvData();
-	int   RecvSize();
-	void  RecvClear();
+	BYTE* RecvData() override;
+	int   RecvSize() override;
+	void  RecvClear() override;
 
 	static void* operator new(size_t sz);
 	static void operator delete(void* p) noexcept;
+
+private:
+	void SendData(BYTE* data, ULONG data_size);
 };

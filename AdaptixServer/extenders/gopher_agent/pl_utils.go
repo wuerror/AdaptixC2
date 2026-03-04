@@ -7,6 +7,7 @@ import (
 	"io"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 type Profile struct {
@@ -227,14 +228,6 @@ type ParamsTunnelStop struct {
 	ChannelId int `msgpack:"channel_id"`
 }
 
-type ParamsTunnelPause struct {
-	ChannelId int `msgpack:"channel_id"`
-}
-
-type ParamsTunnelResume struct {
-	ChannelId int `msgpack:"channel_id"`
-}
-
 type ParamsTerminalStart struct {
 	TermId  int    `msgpack:"term_id"`
 	Program string `msgpack:"program"`
@@ -259,6 +252,20 @@ type BofMsg struct {
 
 type AnsExecBof struct {
 	Msgs []byte `msgpack:"msgs"`
+}
+
+type AnsExecBofAsync struct {
+	Msgs   []byte `msgpack:"msgs"`
+	Start  bool   `msgpack:"start"`
+	Finish bool   `msgpack:"finish"`
+}
+
+type ParamsTunnelPause struct {
+	ChannelId int `msgpack:"channel_id"`
+}
+
+type ParamsTunnelResume struct {
+	ChannelId int `msgpack:"channel_id"`
 }
 
 const (
@@ -293,8 +300,9 @@ const (
 	COMMAND_TERMINAL_START = 35
 	COMMAND_TERMINAL_STOP  = 36
 
-	COMMAND_EXEC_BOF     = 50
-	COMMAND_EXEC_BOF_OUT = 51
+	COMMAND_EXEC_BOF       = 50
+	COMMAND_EXEC_BOF_OUT   = 51
+	COMMAND_EXEC_BOF_ASYNC = 52
 
 	CALLBACK_OUTPUT      = 0x0
 	CALLBACK_OUTPUT_OEM  = 0x1e
@@ -384,6 +392,13 @@ func UnzipBytes(zipData []byte) (map[string][]byte, error) {
 	}
 
 	return result, nil
+}
+
+func ensureNewline(s string) string {
+	if s == "" || strings.HasSuffix(s, "\n") {
+		return s
+	}
+	return s + "\n"
 }
 
 func SizeBytesToFormat(bytes int64) string {

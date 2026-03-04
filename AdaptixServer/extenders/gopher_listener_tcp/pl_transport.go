@@ -69,6 +69,7 @@ const (
 	JOB_PACK      = 3
 	TUNNEL_PACK   = 4
 	TERMINAL_PACK = 5
+	BOF_PACK      = 6
 )
 
 type StartMsg struct {
@@ -352,7 +353,7 @@ func (t *TransportTCP) handleConnection(conn net.Conn, ts Teamserver) {
 		t.JobConnects.Delete(jcId)
 		_ = conn.Close()
 
-	case JOB_PACK:
+	case JOB_PACK, BOF_PACK:
 
 		var jobPack JobPack
 		err := msgpack.Unmarshal(initMsg.Data, &jobPack)

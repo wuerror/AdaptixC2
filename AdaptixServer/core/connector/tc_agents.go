@@ -2,6 +2,7 @@ package connector
 
 import (
 	"AdaptixServer/core/utils/logs"
+	"AdaptixServer/core/utils/std"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -53,7 +54,6 @@ func (tc *TsConnector) TcAgentGenerate(ctx *gin.Context) {
 }
 
 type CommandData struct {
-	AgentName  string `json:"name"`
 	AgentId    string `json:"id"`
 	UI         bool   `json:"ui"`
 	CmdLine    string `json:"cmdline"`
@@ -61,6 +61,72 @@ type CommandData struct {
 	HookId     string `json:"ax_hook_id"`
 	HandlerId  string `json:"ax_handler_id"`
 	WaitAnswer bool   `json:"wait_answer"`
+}
+
+func (tc *TsConnector) resolveFileRefs(args map[string]any) error {
+	for key, val := range args {
+		m, ok := val.(map[string]any)
+		if !ok {
+			continue
+		}
+		ref, ok := m["__file_ref"].(string)
+		if !ok || ref == "" {
+			continue
+		}
+		data, err := tc.teamserver.TsUploadGetFileContent(ref)
+		if err != nil {
+			return fmt.Errorf("failed to resolve file ref '%s' for arg '%s': %w", ref, key, err)
+		}
+		args[key] = base64.StdEncoding.EncodeToString(data)
+	}
+	return nil
+}
+
+func (tc *TsConnector) dispatchAgentCommand(ctx *gin.Context, username string, commandData *CommandData, args map[string]any) {
+	agentName, listenerRegName, agentOs, ctxErr := tc.teamserver.AxGetAgentContext(commandData.AgentId)
+	if ctxErr != nil {
+		ctx.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("agent not found: %v", ctxErr), "ok": false})
+		return
+	}
+
+	/// Resolve __file_ref markers: read temp files, base64-encode, replace in args
+	if err := tc.resolveFileRefs(args); err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"message": err.Error(), "ok": false})
+		return
+	}
+
+	/// Resolve server-side hooks if client did not provide any
+	if commandData.HookId == "" && commandData.HandlerId == "" {
+		srvHookId, srvHandlerId, preHookHandled, hookErr := tc.teamserver.TsAxScriptResolveHooks(agentName, commandData.AgentId, listenerRegName, agentOs, commandData.CmdLine, args)
+		if hookErr != nil {
+			tc.teamserver.TsAgentConsoleErrorCommand(commandData.AgentId, username, commandData.CmdLine, std.ExtractJsErrorMessage(hookErr), "", "")
+			ctx.JSON(http.StatusOK, gin.H{"message": "", "ok": true})
+			return
+		}
+		if preHookHandled {
+			ctx.JSON(http.StatusOK, gin.H{"message": "", "ok": true})
+			return
+		}
+		commandData.HookId = srvHookId
+		commandData.HandlerId = srvHandlerId
+	}
+
+	if commandData.WaitAnswer {
+		err := tc.teamserver.TsAgentCommand(agentName, commandData.AgentId, username, commandData.HookId, commandData.HandlerId, commandData.CmdLine, commandData.UI, args)
+		if err != nil {
+			ctx.JSON(http.StatusOK, gin.H{"message": err.Error(), "ok": false})
+			return
+		}
+	} else {
+		go func(agentName, agentId, clientName, hookId, handlerId, cmdline string, ui bool, a map[string]any) {
+			err := tc.teamserver.TsAgentCommand(agentName, agentId, clientName, hookId, handlerId, cmdline, ui, a)
+			if err != nil {
+				tc.teamserver.TsAgentConsoleErrorCommand(agentId, clientName, cmdline, err.Error(), hookId, handlerId)
+			}
+		}(agentName, commandData.AgentId, username, commandData.HookId, commandData.HandlerId, commandData.CmdLine, commandData.UI, args)
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "", "ok": true})
 }
 
 func (tc *TsConnector) TcAgentCommandExecute(ctx *gin.Context) {
@@ -95,22 +161,7 @@ func (tc *TsConnector) TcAgentCommandExecute(ctx *gin.Context) {
 		logs.Debug("", "Error parsing commands JSON: %s\n", err.Error())
 	}
 
-	if commandData.WaitAnswer {
-		err = tc.teamserver.TsAgentCommand(commandData.AgentName, commandData.AgentId, username, commandData.HookId, commandData.HandlerId, commandData.CmdLine, commandData.UI, args)
-		if err != nil {
-			ctx.JSON(http.StatusOK, gin.H{"message": err.Error(), "ok": false})
-			return
-		}
-	} else {
-		go func(agentName, agentId, clientName, hookId, handlerId, cmdline string, ui bool, a map[string]any) {
-			err := tc.teamserver.TsAgentCommand(agentName, agentId, clientName, hookId, handlerId, cmdline, ui, a)
-			if err != nil {
-				tc.teamserver.TsAgentConsoleErrorCommand(agentId, clientName, cmdline, err.Error(), hookId, handlerId)
-			}
-		}(commandData.AgentName, commandData.AgentId, username, commandData.HookId, commandData.HandlerId, commandData.CmdLine, commandData.UI, args)
-	}
-
-	ctx.JSON(http.StatusOK, gin.H{"message": "", "ok": true})
+	tc.dispatchAgentCommand(ctx, username, &commandData, args)
 }
 
 type CommandData2 struct {
@@ -122,7 +173,6 @@ func (tc *TsConnector) TcAgentCommandFile(ctx *gin.Context) {
 		username     string
 		commandData  CommandData
 		commandData2 CommandData2
-		args         map[string]any
 		ok           bool
 		err          error
 	)
@@ -157,24 +207,55 @@ func (tc *TsConnector) TcAgentCommandFile(ctx *gin.Context) {
 		return
 	}
 
+	var args map[string]any
 	err = json.Unmarshal([]byte(commandData.Data), &args)
 	if err != nil {
 		logs.Debug("", "Error parsing commands JSON: %s\n", err.Error())
 	}
 
-	if commandData.WaitAnswer {
-		err = tc.teamserver.TsAgentCommand(commandData.AgentName, commandData.AgentId, username, commandData.HookId, commandData.HandlerId, commandData.CmdLine, commandData.UI, args)
-		if err != nil {
-			ctx.JSON(http.StatusOK, gin.H{"message": err.Error(), "ok": false})
-			return
-		}
-	} else {
-		go func(agentName, agentId, clientName, hookId, handlerId, cmdline string, ui bool, a map[string]any) {
-			err := tc.teamserver.TsAgentCommand(agentName, agentId, clientName, hookId, handlerId, cmdline, ui, a)
-			if err != nil {
-				tc.teamserver.TsAgentConsoleErrorCommand(agentId, clientName, cmdline, err.Error(), hookId, handlerId)
-			}
-		}(commandData.AgentName, commandData.AgentId, username, commandData.HookId, commandData.HandlerId, commandData.CmdLine, commandData.UI, args)
+	tc.dispatchAgentCommand(ctx, username, &commandData, args)
+}
+
+type CommandDataRaw struct {
+	AgentId string `json:"id"`
+	CmdLine string `json:"cmdline"`
+}
+
+func (tc *TsConnector) TcAgentCommandRaw(ctx *gin.Context) {
+	var (
+		username string
+		rawData  CommandDataRaw
+		ok       bool
+		err      error
+	)
+
+	value, exists := ctx.Get("username")
+	if !exists {
+		ctx.JSON(http.StatusOK, gin.H{"message": "Server error: username not found in context", "ok": false})
+		return
+	}
+
+	username, ok = value.(string)
+	if !ok {
+		ctx.JSON(http.StatusOK, gin.H{"message": "Server error: invalid username type in context", "ok": false})
+		return
+	}
+
+	err = ctx.ShouldBindJSON(&rawData)
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"message": "invalid JSON data", "ok": false})
+		return
+	}
+
+	if rawData.AgentId == "" || rawData.CmdLine == "" {
+		ctx.JSON(http.StatusOK, gin.H{"message": "id and cmdline are required", "ok": false})
+		return
+	}
+
+	err = tc.teamserver.TsAxScriptParseAndExecute(rawData.AgentId, username, rawData.CmdLine)
+	if err != nil {
+		ctx.JSON(http.StatusOK, gin.H{"message": err.Error(), "ok": false})
+		return
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "", "ok": true})

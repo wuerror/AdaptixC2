@@ -79,7 +79,6 @@ func (tm *TaskManager) syncTaskCreate(agentId string, agent *Agent, taskData *ad
 		packet_console := CreateSpAgentConsoleTaskSync(*taskData)
 		tm.ts.TsSyncConsole(packet_console, taskData.Client)
 
-		agent.OutConsole.Put(packet_console)
 		_ = tm.ts.DBMS.DbConsoleInsert(agentId, packet_console)
 	}
 }
@@ -100,13 +99,11 @@ func (tm *TaskManager) syncTaskUpdate(agentId string, agent *Agent, taskData *ad
 		packet_console := CreateSpAgentConsoleTaskUpd(*taskData)
 		tm.ts.TsSyncConsole(packet_console, taskData.Client)
 
-		agent.OutConsole.Put(packet_console)
 		_ = tm.ts.DBMS.DbConsoleInsert(agentId, packet_console)
 	}
 }
 
 func (tm *TaskManager) completeTask(agent *Agent, taskData *adaptix.TaskData) {
-	agent.CompletedTasks.Put(taskData.TaskId, *taskData)
 	_ = tm.ts.DBMS.DbTaskInsert(*taskData)
 
 	// --- POST HOOK ---
@@ -116,6 +113,25 @@ func (tm *TaskManager) completeTask(agent *Agent, taskData *adaptix.TaskData) {
 	}
 	tm.ts.EventManager.EmitAsync(eventing.EventTaskComplete, postEvent)
 	// -----------------
+}
+
+func (tm *TaskManager) executeServerHandler(taskData *adaptix.TaskData) {
+	if taskData.HandlerId == "" {
+		return
+	}
+	if !tm.ts.TsAxScriptIsServerHook(taskData.HandlerId) {
+		return
+	}
+	handlerData := map[string]interface{}{
+		"agent":   taskData.AgentId,
+		"task_id": taskData.TaskId,
+		"cmdline": taskData.CommandLine,
+		"message": taskData.Message,
+		"text":    taskData.ClearText,
+		"type":    taskData.MessageType,
+	}
+	_ = tm.ts.TsAxScriptExecHandler(taskData.HandlerId, handlerData)
+	taskData.HandlerId = ""
 }
 
 func (tm *TaskManager) Create(agentId string, cmdline string, client string, taskData adaptix.TaskData) {
@@ -233,6 +249,12 @@ func (tm *TaskManager) Cancel(agentId string, taskId string) error {
 	if found {
 		task, ok := retTask.(adaptix.TaskData)
 		if ok {
+			if task.HookId != "" && tm.ts.TsAxScriptIsServerHook(task.HookId) {
+				tm.ts.TsAxScriptRemovePostHook(task.HookId)
+			}
+			if task.HandlerId != "" && tm.ts.TsAxScriptIsServerHook(task.HandlerId) {
+				tm.ts.TsAxScriptRemoveHandler(task.HandlerId)
+			}
 			packet := CreateSpAgentTaskRemove(task)
 			tm.ts.TsSyncAllClients(packet)
 		}
@@ -259,14 +281,9 @@ func (tm *TaskManager) Delete(agentId string, taskId string) error {
 		return fmt.Errorf("task %v in process", taskId)
 	}
 
-	value, ok := agent.CompletedTasks.GetDelete(taskId)
-	if !ok {
+	task, err := tm.ts.DBMS.DbTaskGet(taskId)
+	if err != nil {
 		return fmt.Errorf("task %v not found", taskId)
-	}
-
-	task, ok := value.(adaptix.TaskData)
-	if !ok {
-		return fmt.Errorf("invalid task type for %v", taskId)
 	}
 
 	_ = tm.ts.DBMS.DbTaskDelete(task.TaskId, "")
@@ -291,8 +308,6 @@ func (tm *TaskManager) Save(taskData adaptix.TaskData) error {
 	taskData.FinishDate = taskData.StartDate
 	taskData.Sync = true
 	taskData.Completed = true
-
-	agent.CompletedTasks.Put(taskData.TaskId, taskData)
 
 	packet_task := CreateSpAgentTaskSync(taskData)
 	tm.ts.TsSyncAllClients(packet_task)

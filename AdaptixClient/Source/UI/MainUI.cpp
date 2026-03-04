@@ -68,10 +68,6 @@ MainUI::MainUI()
     mainuiTabWidget->setMovable(true);
     mainuiTabWidget->tabBar()->setMovable(false);
     mainuiTabWidget->setMovable(false);
-    mainuiTabWidget->tabBar()->setFixedHeight(20);
-    mainuiTabWidget->tabBar()->setMinimumHeight(20);
-    mainuiTabWidget->tabBar()->setMaximumHeight(20);
-    mainuiTabWidget->tabBar()->setStyleSheet("QTabBar::tab { height: 20px; padding: 0px; margin: 0px; }");
 
     connect(mainuiTabWidget, &QTabWidget::currentChanged, this, &MainUI::onTabChanged);
 
@@ -178,6 +174,11 @@ AuthProfile* MainUI::GetCurrentProfile() const
     return adaptixWidget->GetProfile();
 }
 
+QVector<AdaptixWidget*> MainUI::GetAdaptixProjects() const
+{
+    return AdaptixProjects;
+}
+
 /// Actions
 
 void MainUI::onNewProject() { GlobalClient->NewProject(); }
@@ -211,7 +212,11 @@ void MainUI::onAxScriptConsole()
     adaptixWidget->LoadAxConsoleUI();
 }
 
-void MainUI::onScriptManager() { GlobalClient->extender->dialogExtender->show(); }
+void MainUI::onScriptManager()
+{
+    GlobalClient->extender->dialogExtender->SetMainUI(this);
+    GlobalClient->extender->dialogExtender->show();
+}
 
 void MainUI::onSettings() { GlobalClient->settings->getDialogSettings()->show(); }
 
@@ -337,7 +342,7 @@ void MainUI::updateTabButton(const int index, const QString& tabName, const bool
     labelFont.setFamily(appFont.family());
     labelFont.setPointSize(appFont.pointSize());
     label->setFont(labelFont);
-    label->setStyleSheet("QLabel { background: transparent; padding: 0px 4px; margin: 0px; border: none; }");
+    label->setProperty("transparent", true);
 
     layout->addWidget(label, 1, Qt::AlignCenter);
 
@@ -355,7 +360,6 @@ void MainUI::updateTabButton(const int index, const QString& tabName, const bool
 
         folderButton->setToolTip("Open project directory");
         folderButton->setFlat(true);
-        folderButton->setStyleSheet("QPushButton { background: transparent; border: none; padding: 0px; } QPushButton:hover { background-color: rgba(128, 128, 128, 80); border-radius: 2px; }");
 
         connect(folderButton, &QPushButton::clicked, this, &MainUI::onOpenProjectDirectory);
 

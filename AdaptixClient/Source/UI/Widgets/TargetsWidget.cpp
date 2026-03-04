@@ -14,12 +14,13 @@ TargetsWidget::TargetsWidget(AdaptixWidget* w) : DockTab("Targets", w->GetProfil
 {
     this->createUI();
 
-    connect(tableView,  &QTableWidget::customContextMenuRequested, this, &TargetsWidget::handleTargetsMenu);
-    connect(tableView,  &QTableWidget::doubleClicked,              this, &TargetsWidget::onEditTarget);
+    connect(tableView,  &QTableView::customContextMenuRequested, this, &TargetsWidget::handleTargetsMenu);
+    connect(tableView,  &QTableView::doubleClicked,              this, &TargetsWidget::onEditTarget);
     connect(tableView->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this](const QItemSelection &selected, const QItemSelection &deselected){
         Q_UNUSED(selected)
         Q_UNUSED(deselected)
-        tableView->setFocus();
+        if (!inputFilter->hasFocus())
+            tableView->setFocus();
     });
     connect(hideButton,   &ClickableLabel::clicked,  this, &TargetsWidget::toggleSearchPanel);
     connect(inputFilter,  &QLineEdit::textChanged,   this, &TargetsWidget::onFilterUpdate);
@@ -100,7 +101,6 @@ void TargetsWidget::createUI()
 
     hideButton = new ClickableLabel("  x  ");
     hideButton->setCursor(Qt::PointingHandCursor);
-    hideButton->setStyleSheet("QLabel { color: #888; font-weight: bold; } QLabel:hover { color: #e34234; }");
 
     searchLayout = new QHBoxLayout(searchWidget);
     searchLayout->setContentsMargins(0, 5, 0, 0);
@@ -118,6 +118,7 @@ void TargetsWidget::createUI()
 
     tableView = new QTableView( this );
     tableView->setModel(proxyModel);
+    tableView->setHorizontalHeader(new BoldHeaderView(Qt::Horizontal, tableView));
     tableView->setContextMenuPolicy( Qt::CustomContextMenu );
     tableView->setAutoFillBackground( false );
     tableView->setShowGrid( false );
@@ -132,7 +133,7 @@ void TargetsWidget::createUI()
     tableView->horizontalHeader()->setHighlightSections( false );
     tableView->verticalHeader()->setVisible( false );
 
-    proxyModel->sort(-1);
+    tableView->sortByColumn(TRC_Date, Qt::AscendingOrder);
 
     tableView->horizontalHeader()->setSectionResizeMode( TRC_Tag,  QHeaderView::Stretch );
     tableView->horizontalHeader()->setSectionResizeMode( TRC_Os,   QHeaderView::Stretch );
@@ -308,6 +309,7 @@ void TargetsWidget::toggleSearchPanel() const
     else {
         this->searchWidget->setVisible(true);
         proxyModel->setSearchVisible(true);
+        inputFilter->setFocus();
     }
 }
 

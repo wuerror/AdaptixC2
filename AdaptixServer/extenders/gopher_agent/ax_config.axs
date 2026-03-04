@@ -101,6 +101,7 @@ function RegisterCommands(listenerType)
     cmd_download_unix.addArgString("path", true);
 
     let _cmd_execute_bof = ax.create_command("bof", "Execute Beacon Object File", "execute bof /home/user/whoami.o", "Task: execute BOF");
+    _cmd_execute_bof.addArgBool("-a", "Async mode");
     _cmd_execute_bof.addArgFile("bof", true, "Path to object file");
     _cmd_execute_bof.addArgString("param_data", false);
     let cmd_execute = ax.create_command("execute", "Execute [bof] in the current process's memory");
