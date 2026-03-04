@@ -922,12 +922,12 @@ func (ext *ExtenderAgent) CreateCommand(agentData adaptix.AgentData, args map[st
 		if err != nil {
 			goto RET
 		}
-		
+
 		sleepTime, err := parseDurationToSeconds(sleepStr)
 		if err != nil {
 			goto RET
 		}
-		
+
 		jitter, err := getFloatArg(args, "jitter")
 		if err != nil {
 			jitter = 0 // Default to 0 if not provided
@@ -1933,6 +1933,8 @@ func (ext *ExtenderAgent) ProcessData(agentData adaptix.AgentData, decryptedData
 			outTasks = append(outTasks, task)
 		}
 	}
+
+HANDLER:
 
 	/// END CODE
 
