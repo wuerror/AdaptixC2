@@ -62,11 +62,13 @@ CreateFileA
 CreateNamedPipeA
 CreatePipe
 CreateProcessA
+CreateProcessWithTokenW
 CreateThread
 DeleteCriticalSection
 DeleteFileA
 DisconnectNamedPipe
 EnterCriticalSection
+TryEnterCriticalSection
 FindClose
 FindFirstFileA
 FindNextFileA
@@ -113,14 +115,24 @@ RemoveDirectoryA
 RtlCaptureContext
 SetCurrentDirectoryA
 SetEvent
+ResetEvent
 SetNamedPipeHandleState
 Sleep
 VirtualAlloc
 VirtualFree
 WaitForSingleObject
+WaitForMultipleObjects
 WaitNamedPipeA
 WideCharToMultiByte
 WriteFile
+WaitForSingleObjectEx
+GetOverlappedResult
+CancelIo
+RtlAddFunctionTable
+RtlDeleteFunctionTable
+VirtualProtect
+LoadLibraryExA
+
 
 // iphlpapi
 GetAdaptersInfo
@@ -179,10 +191,12 @@ FreeLibrary
 __C_specific_handler
 AxAddScreenshot
 AxDownloadMemory
+
 // Async BOF
 BeaconRegisterThreadCallback
 BeaconUnregisterThreadCallback
 BeaconWakeup
+BeaconGetStopJobEvent
 
 // wininet
 InternetOpenA

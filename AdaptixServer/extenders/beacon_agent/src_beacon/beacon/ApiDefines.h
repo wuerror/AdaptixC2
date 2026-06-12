@@ -1,10 +1,10 @@
 #pragma once
 
-#define HASH_LIB_NTDLL              0x19a59ec
+#define HASH_LIB_NTDLL                 0x19a59ec
 #define HASH_LIB_KERNEL32           0x7b348614
 #define HASH_LIB_IPHLPAPI           0x2d288345
 #define HASH_LIB_ADVAPI32           0x721421e8
-#define HASH_LIB_MSVCRT             0xb707534d
+#define HASH_LIB_MSVCRT               0xb707534d
 
 
 //ntdll
@@ -25,6 +25,10 @@
 #define HASH_FUNC_RTLRANDOMEX                        0x5b052214
 #define HASH_FUNC_RTLNTSTATUSTODOSERROR              0x7701adaf
 #define HASH_FUNC_NTFLUSHINSTRUCTIONCACHE            0x91a1659e
+#define HASH_FUNC_NTCREATESECTION                     0x217c086f
+#define HASH_FUNC_NTMAPVIEWOFSECTION                  0x25b394e9
+#define HASH_FUNC_NTUNMAPVIEWOFSECTION                0xc995d3ec
+#define HASH_FUNC_NTOPENFILE                          0x83d5c058
 
 //kernel32
 #define HASH_FUNC_CONNECTNAMEDPIPE                   0xda6c7d81
@@ -35,11 +39,13 @@
 #define HASH_FUNC_CREATENAMEDPIPEA                   0x375c5b8c
 #define HASH_FUNC_CREATEPIPE                         0xd38cc306
 #define HASH_FUNC_CREATEPROCESSA                     0x352ef9d8
+#define HASH_FUNC_CREATEPROCESSWITHTOKENW            0x231cf52b
 #define HASH_FUNC_CREATETHREAD                       0xf30d4c30
 #define HASH_FUNC_DELETECRITICALSECTION              0x21d8fe57
 #define HASH_FUNC_DELETEFILEA                        0x75b1df38
 #define HASH_FUNC_DISCONNECTNAMEDPIPE                0x6d59f261
 #define HASH_FUNC_ENTERCRITICALSECTION               0x5b6e9a42
+#define HASH_FUNC_TRYENTERCRITICALSECTION            0x5181e9e1
 #define HASH_FUNC_FINDCLOSE                          0x257f195b
 #define HASH_FUNC_FINDFIRSTFILEA                     0x2ffa9aae
 #define HASH_FUNC_FINDNEXTFILEA                      0xdacd2845
@@ -86,16 +92,24 @@
 #define HASH_FUNC_RTLCAPTURECONTEXT                  0x626d2e2f
 #define HASH_FUNC_SETCURRENTDIRECTORYA               0x2e1c9789
 #define HASH_FUNC_SETEVENT                           0xe26f0832
-#define HASH_FUNC_TRYENTERCRITICALSECTION             0x5181e9e1
 #define HASH_FUNC_RESETEVENT                         0x455f5749
 #define HASH_FUNC_SETNAMEDPIPEHANDLESTATE            0x89e25d30
 #define HASH_FUNC_SLEEP                              0x5b4b729d
 #define HASH_FUNC_VIRTUALALLOC                       0x63ce6376
 #define HASH_FUNC_VIRTUALFREE                        0xbd37a32d
 #define HASH_FUNC_WAITFORSINGLEOBJECT                0x471fd0f9
+#define HASH_FUNC_WAITFORMULTIPLEOBJECTS             0xa8544ad6
 #define HASH_FUNC_WAITNAMEDPIPEA                     0x8a2ba58d
 #define HASH_FUNC_WIDECHARTOMULTIBYTE                0x12d4f52d
 #define HASH_FUNC_WRITEFILE                          0xd4a33cef
+#define HASH_FUNC_WAITFORSINGLEOBJECTEX              0x8e5800b6
+#define HASH_FUNC_GETOVERLAPPEDRESULT                0xcb755695
+#define HASH_FUNC_CANCELIO                           0xdc3c6d02
+#define HASH_FUNC_RTLADDFUNCTIONTABLE                0xbad6a4ed
+#define HASH_FUNC_RTLDELETEFUNCTIONTABLE             0x6ff11737
+#define HASH_FUNC_VIRTUALPROTECT                     0x21d6b92c
+#define HASH_FUNC_LOADLIBRARYEXA                     0xcf121857
+
 
 // iphlpapi
 #define HASH_FUNC_GETADAPTERSINFO                    0xa1376764
@@ -113,12 +127,9 @@
 #define HASH_FUNC_SETSECURITYDESCRIPTORDACL          0x37dc047b
 #define HASH_FUNC_DUPLICATETOKENEX                   0xa7ab369d
 #define HASH_FUNC_CREATEPROCESSASUSERA               0x4cb03b6b
-#define HASH_FUNC_CREATEPROCESSWITHTOKENW            0x231cf52b
 
 // msvcrt
-#if defined(DEBUG)
 #define HASH_FUNC_PRINTF                             0xbe293817
-#endif
 #define HASH_FUNC_VSNPRINTF                          0xc4e4280e
 #define HASH_FUNC__SNPRINTF                          0x4db600f7
 
@@ -157,11 +168,12 @@
 #define HASH_FUNC___C_SPECIFIC_HANDLER               0x6d7af307
 #define HASH_FUNC_AXADDSCREENSHOT                    0x495c25a4
 #define HASH_FUNC_AXDOWNLOADMEMORY                   0x5c8fc8ce
+
 // Async BOF
 #define HASH_FUNC_BEACONREGISTERTHREADCALLBACK       0x6db87516
 #define HASH_FUNC_BEACONUNREGISTERTHREADCALLBACK     0x816703d9
 #define HASH_FUNC_BEACONWAKEUP                       0xf3334cb9
-#define HASH_FUNC_BEACONGETSTOPJOBEVENT              0x0848788f
+#define HASH_FUNC_BEACONGETSTOPJOBEVENT              0x848788f
 
 // wininet
 #define HASH_FUNC_INTERNETOPENA                      0x4c383c80

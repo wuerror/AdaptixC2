@@ -11,7 +11,6 @@
 typedef int (*printf_t)(const char* format, ...);
 typedef int (*vsnprintf_t)(char* str, size_t size, const char* format, va_list args);
 typedef int (*snprintf_t)(char*, size_t, const char*, ...);
-
 extern void* __cdecl memset(void*, int, size_t);
 extern void* __cdecl memcpy(void*, const void*, size_t);
 
@@ -94,9 +93,15 @@ struct WINAPIFUNC
 	DECL_API(VirtualAlloc);
 	DECL_API(VirtualFree);
 	DECL_API(WaitForSingleObject);
+	DECL_API(WaitForMultipleObjects);
 	DECL_API(WaitNamedPipeA);
 	DECL_API(WideCharToMultiByte);
 	DECL_API(WriteFile);
+	DECL_API(GetOverlappedResult);
+	DECL_API(CancelIo);
+	
+	DECL_API(VirtualProtect);
+	DECL_API(LoadLibraryExA);
 	
 	// iphlpapi
 	DECL_API(GetAdaptersInfo);
@@ -160,6 +165,15 @@ struct NTAPIFUNC
 	DECL_API(RtlIpv4StringToAddressA);
 	DECL_API(RtlRandomEx);
 	DECL_API(RtlNtStatusToDosError);
+	DECL_API(NtCreateSection);
+	DECL_API(NtMapViewOfSection);
+	DECL_API(NtUnmapViewOfSection);
+	DECL_API(NtOpenFile);
+
+#ifdef _WIN64
+	DECL_API(RtlAddFunctionTable);
+	DECL_API(RtlDeleteFunctionTable);
+#endif
 };
 
 extern SYSMODULES* SysModules;
