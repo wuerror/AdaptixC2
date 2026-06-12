@@ -30,6 +30,27 @@ void* __cdecl memset(void* Destination, int Value, size_t Size)
 	return Destination;
 }
 
+#pragma intrinsic(memcpy)
+#pragma function(memcpy)
+void* __cdecl memcpy(void* Dst, const void* Src, size_t Size)
+{
+	unsigned char* d = (unsigned char*)Dst;
+	const unsigned char* s = (const unsigned char*)Src;
+	
+	if (Size >= sizeof(size_t) && (((size_t)d | (size_t)s) & (sizeof(size_t) - 1)) == 0) {
+		while (Size >= sizeof(size_t)) {
+			*(size_t*)d = *(const size_t*)s;
+			d += sizeof(size_t);
+			s += sizeof(size_t);
+			Size -= sizeof(size_t);
+		}
+	}
+	while (Size--)
+		*d++ = *s++;
+	
+	return Dst;
+}
+
 
 CHAR HdChrA(CHAR c) { return c; }
 WCHAR HdChrW(WCHAR c) { return c; }
@@ -115,8 +136,8 @@ BOOL ApiLoad()
 		ApiWin->GetOverlappedResult		= (decltype(GetOverlappedResult)*)		   GetSymbolAddress(hKernel32Module, HASH_FUNC_GETOVERLAPPEDRESULT);
 		ApiWin->Sleep					= (decltype(Sleep)*)				   GetSymbolAddress(hKernel32Module, HASH_FUNC_SLEEP);
 		ApiWin->CancelIo				= (decltype(CancelIo)*)				   GetSymbolAddress(hKernel32Module, HASH_FUNC_CANCELIO);
-		ApiWin->WaitForSingleObject     = &WaitForSingleObject;
-		ApiWin->WaitForMultipleObjects  = &WaitForMultipleObjects;
+		ApiWin->WaitForSingleObject     = (decltype(WaitForSingleObject)*)	   GetSymbolAddress(hKernel32Module, HASH_FUNC_WAITFORSINGLEOBJECT);
+		ApiWin->WaitForMultipleObjects  = (decltype(WaitForMultipleObjects)*)	   GetSymbolAddress(hKernel32Module, HASH_FUNC_WAITFORMULTIPLEOBJECTS);
 		
 		ApiWin->VirtualAlloc			= (decltype(VirtualAlloc)*)			   GetSymbolAddress(hKernel32Module, HASH_FUNC_VIRTUALALLOC);
 		ApiWin->VirtualFree				= (decltype(VirtualFree)*)			   GetSymbolAddress(hKernel32Module, HASH_FUNC_VIRTUALFREE);
