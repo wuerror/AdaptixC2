@@ -493,10 +493,11 @@ func (p *PluginAgent) GenerateProfiles(profile adaptix.BuildProfile) ([][]byte, 
 			if userAgent == "" {
 				userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
 			}
-			params, err = buildDNSProfileParams(generateConfig, listenerMap, userAgent)
+			dnsParams, err := buildDNSProfileParams(generateConfig, listenerMap, userAgent)
 			if err != nil {
 				return nil, err
 			}
+			params = append(params, dnsParams...)
 
 		default:
 			return nil, errors.New("protocol unknown")
